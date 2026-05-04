@@ -1,4 +1,4 @@
-package io.github.fadizg.kmpai.sample.android
+package io.github.fadizg.kmpai.sample.app
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -8,10 +8,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -32,20 +30,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun ChatScreen(state: ChatUiState, onSend: (String) -> Unit) {
+fun ChatScreen(state: ChatState, onSend: (String) -> Unit) {
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .imePadding(),
-        ) {
+        Column(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
             Header(state = state)
             MessageList(
                 modifier = Modifier.weight(1f),
@@ -58,7 +49,7 @@ fun ChatScreen(state: ChatUiState, onSend: (String) -> Unit) {
 }
 
 @Composable
-private fun Header(state: ChatUiState) {
+private fun Header(state: ChatState) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
         Text(
             text = "kmp-ai · Qwen2.5 0.5B",
@@ -98,13 +89,9 @@ private fun MessageList(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         state = listState,
     ) {
-        items(messages) { line ->
-            MessageBubble(line = line)
-        }
+        items(messages) { line -> MessageBubble(line) }
         if (streaming.isNotEmpty()) {
-            item {
-                MessageBubble(line = ChatLine(ChatLine.Author.ASSISTANT, streaming))
-            }
+            item { MessageBubble(ChatLine(ChatLine.Author.ASSISTANT, streaming)) }
         }
     }
 }
@@ -158,8 +145,6 @@ private fun Composer(enabled: Boolean, onSend: (String) -> Unit) {
                 }
             },
             enabled = enabled && input.isNotBlank(),
-        ) {
-            Text("Send")
-        }
+        ) { Text("Send") }
     }
 }

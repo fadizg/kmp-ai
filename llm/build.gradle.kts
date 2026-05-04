@@ -63,3 +63,5 @@ if (androidEnabled) {
 if (iosEnabled) {
     apply(from = "build-ios.gradle")
 }
+
+apply(from = "$rootDir/gradle/publishing.gradle.kts")

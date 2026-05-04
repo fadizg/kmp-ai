@@ -42,3 +42,5 @@ kotlin {
 if (androidEnabled) {
     apply(from = "build-android.gradle")
 }
+
+apply(from = "$rootDir/gradle/publishing.gradle.kts")

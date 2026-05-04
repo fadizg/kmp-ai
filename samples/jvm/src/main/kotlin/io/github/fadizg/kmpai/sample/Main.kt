@@ -2,11 +2,9 @@ package io.github.fadizg.kmpai.sample
 
 import io.github.fadizg.kmpai.llm.ChatSession
 import io.github.fadizg.kmpai.llm.ChatTemplate
-import io.github.fadizg.kmpai.llm.DefaultModelRepository
 import io.github.fadizg.kmpai.llm.DownloadProgress
 import io.github.fadizg.kmpai.llm.EngineConfig
-import io.github.fadizg.kmpai.llm.JvmModelCache
-import io.github.fadizg.kmpai.llm.LlmEngineFactory
+import io.github.fadizg.kmpai.llm.LlmEnvironment
 import io.github.fadizg.kmpai.llm.ModelSource
 import io.github.fadizg.kmpai.llm.SamplingParams
 import kotlinx.coroutines.flow.collect
@@ -19,38 +17,30 @@ fun main(args: Array<String>) = runBlocking {
         file = "qwen2.5-0.5b-instruct-q4_k_m.gguf",
     )
 
-    val repository = DefaultModelRepository(JvmModelCache.userCacheDir())
+    val env = LlmEnvironment()
 
     print("resolving model... ")
-    val modelPath = run {
-        var lastPercent = -1
-        repository.resolve(source).onEach { progress ->
-            when (progress) {
-                is DownloadProgress.Running -> {
-                    val pct = progress.fraction?.let { (it * 100).toInt() } ?: -1
-                    if (pct != lastPercent) {
-                        lastPercent = pct
-                        print("\rdownloading: ${pct}% (${progress.bytes / 1_000_000} MB)")
-                    }
-                }
-                is DownloadProgress.Done -> println("\nready: ${progress.path}")
-                is DownloadProgress.Failed -> {
-                    println("\nfailed: ${progress.cause.message}")
-                    throw progress.cause
+    var lastPercent = -1
+    env.repository.resolve(source).onEach { progress ->
+        when (progress) {
+            is DownloadProgress.Running -> {
+                val pct = progress.fraction?.let { (it * 100).toInt() } ?: -1
+                if (pct != lastPercent) {
+                    lastPercent = pct
+                    print("\rdownloading: ${pct}% (${progress.bytes / 1_000_000} MB)")
                 }
             }
-        }.collect()
-        repository.path(source)
-    }
+            is DownloadProgress.Done -> println("\nready: ${progress.path}")
+            is DownloadProgress.Failed -> {
+                println("\nfailed: ${progress.cause.message}")
+                throw progress.cause
+            }
+        }
+    }.collect()
 
-    val engine = LlmEngineFactory().load(
-        modelPath = modelPath,
-        config = EngineConfig(contextSize = 2048, gpuLayers = 0),
-    )
-
-    engine.use {
+    env.load(source, EngineConfig(contextSize = 2048)).use { engine ->
         val chat = ChatSession(
-            engine = it,
+            engine = engine,
             template = ChatTemplate.ChatML,
             systemPrompt = "You are a concise, helpful assistant. Reply in one short paragraph.",
         )

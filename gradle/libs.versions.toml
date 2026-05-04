@@ -2,11 +2,15 @@
 kotlin = "2.0.21"
 coroutines = "1.9.0"
 llamacpp = "4.1.0"
+agp = "8.7.0"
+androidx-annotation = "1.9.1"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 llamacpp = { module = "de.kherud:llama", version.ref = "llamacpp" }
+androidx-annotation = { module = "androidx.annotation:annotation", version.ref = "androidx-annotation" }
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+android-library = { id = "com.android.library", version.ref = "agp" }

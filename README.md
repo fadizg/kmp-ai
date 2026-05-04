@@ -1,9 +1,13 @@
 # kmp-ai
 
 A Kotlin Multiplatform library for running LLMs **offline** via a small,
-explicit API. The first target is **JVM** (backed by `llama.cpp` through
-[`de.kherud:llama`](https://github.com/kherud/java-llama.cpp)). Android and
-iOS targets will plug into the same `commonMain` API.
+explicit API. Both JVM and Android targets use **llama.cpp** under the hood,
+so the same GGUF model file works everywhere:
+
+- **JVM**: backed by [`de.kherud:llama`](https://github.com/kherud/java-llama.cpp) (prebuilt natives bundled).
+- **Android**: builds llama.cpp from source via NDK + CMake (vendored as a git submodule), exposed through a JNI bridge.
+
+iOS is on the roadmap.
 
 ## Modules
 
@@ -83,11 +87,49 @@ it under the platform's user cache dir. Apps can also bundle the model file
 through Android Play Asset Delivery or iOS On-Demand Resources and pass the
 path to `LlmEngineFactory.load(...)`.
 
+## Building the Android target
+
+The Android target is **opt-in** so the JVM build keeps working in environments
+without the Android SDK. Enable it by either setting an env var or a system
+property:
+
+```bash
+export KMP_AI_ANDROID=true
+# or pass each invocation:  ./gradlew -Dkmp-ai.android=true ...
+```
+
+When enabled, Gradle pulls in AGP from `maven.google.com` and the `:llm`
+module gains an `androidTarget()`. You'll also need:
+
+- Android SDK with `platforms;android-35`, `build-tools;35.0.0`, `cmake;3.22.1`
+- Android NDK r26 or newer
+- The `llama.cpp` git submodule checked out:
+  ```bash
+  git submodule update --init --recursive
+  ```
+
+Then:
+
+```bash
+KMP_AI_ANDROID=true ./gradlew :llm:assembleRelease
+```
+
+This produces an AAR with `libllama.so`, `libggml.so`, and `libkmpai_llama.so`
+(our JNI bridge) packaged for `arm64-v8a` and `x86_64`. First build is slow
+(~5 min) because llama.cpp is compiled from source per ABI; incremental
+builds are fast.
+
+The Android `actual` of `LlmEngineFactory.load(...)` takes the same parameters
+as JVM. Get a model path from your `Context.cacheDir` (or wherever you stored
+the GGUF — Play Asset Delivery, on-demand download, etc.) and pass it in.
+
 ## Roadmap
 
-- [x] JVM target (`llama.cpp` via JNI binding)
-- [ ] Android target (JNI to prebuilt `libllama.so`)
-- [ ] iOS target (cinterop to `llama.xcframework`)
+- [x] JVM target — `llama.cpp` via `de.kherud:llama`
+- [x] Android target — `llama.cpp` via NDK + CMake + JNI bridge
+- [ ] iOS target — cinterop to `llama.xcframework`
+- [ ] Lift `DefaultModelRepository` into a shared `jvmAndAndroidMain` source set
+      so it works on Android too (today it's JVM-only)
 - [ ] Catalog modules (`llm-catalog-qwen`, `llm-catalog-gemma`) — small KB-sized
       artifacts that only contain `ModelSource` constants for curated checkpoints
 - [ ] Streaming cancellation that aborts mid-token in the native loop
@@ -96,5 +138,5 @@ path to `LlmEngineFactory.load(...)`.
 ## Requirements
 
 - JDK 21 (the project uses a Gradle toolchain — auto-provisioned if missing)
-- Linux x64 / macOS arm64 / Windows x64 for the JVM target (native bits ship
-  with `de.kherud:llama`)
+- JVM target: Linux x64 / macOS arm64 / Windows x64 (native bits ship with `de.kherud:llama`)
+- Android target: Android SDK + NDK + `KMP_AI_ANDROID=true` env var (see above)

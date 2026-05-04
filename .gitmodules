@@ -1,0 +1,4 @@
+[submodule "llm/src/androidMain/cpp/llama.cpp"]
+	path = llm/src/androidMain/cpp/llama.cpp
+	url = https://github.com/ggml-org/llama.cpp
+	branch = master

@@ -5,6 +5,7 @@ import io.github.fadizg.kmpai.llm.ChatTemplate
 import io.github.fadizg.kmpai.llm.DefaultModelRepository
 import io.github.fadizg.kmpai.llm.DownloadProgress
 import io.github.fadizg.kmpai.llm.EngineConfig
+import io.github.fadizg.kmpai.llm.JvmModelCache
 import io.github.fadizg.kmpai.llm.LlmEngineFactory
 import io.github.fadizg.kmpai.llm.ModelSource
 import io.github.fadizg.kmpai.llm.SamplingParams
@@ -18,7 +19,7 @@ fun main(args: Array<String>) = runBlocking {
         file = "qwen2.5-0.5b-instruct-q4_k_m.gguf",
     )
 
-    val repository = DefaultModelRepository(DefaultModelRepository.userCacheDir())
+    val repository = DefaultModelRepository(JvmModelCache.userCacheDir())
 
     print("resolving model... ")
     val modelPath = run {

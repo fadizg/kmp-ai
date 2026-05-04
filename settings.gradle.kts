@@ -6,27 +6,22 @@ val androidEnabled: Boolean =
         ?: false
 
 pluginManagement {
-    val androidEnabled =
-        System.getenv("KMP_AI_ANDROID")?.toBoolean()
-            ?: System.getProperty("kmp-ai.android")?.toBoolean()
-            ?: false
     repositories {
         gradlePluginPortal()
         mavenCentral()
-        if (androidEnabled) google()
+        google()
     }
 }
 
 dependencyResolutionManagement {
-    val androidEnabled =
-        System.getenv("KMP_AI_ANDROID")?.toBoolean()
-            ?: System.getProperty("kmp-ai.android")?.toBoolean()
-            ?: false
     repositories {
         mavenCentral()
-        if (androidEnabled) google()
+        google()
     }
 }
 
 include(":llm")
+include(":llm-catalog-qwen")
+include(":llm-catalog-gemma")
 include(":samples:jvm")
+if (androidEnabled) include(":samples:android")

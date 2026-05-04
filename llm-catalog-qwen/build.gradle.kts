@@ -18,12 +18,9 @@ if (androidEnabled) {
 
 kotlin {
     jvmToolchain(21)
-
     jvm()
 
-    if (androidEnabled) {
-        androidTarget()
-    }
+    if (androidEnabled) androidTarget()
 
     if (iosEnabled) {
         iosArm64()
@@ -37,29 +34,11 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
-            implementation(libs.kotlinx.coroutines.core)
-        }
-        jvmMain {
-            kotlin.srcDir("src/jvmAndAndroidMain/kotlin")
-            dependencies {
-                implementation(libs.llamacpp)
-            }
-        }
-        if (androidEnabled) {
-            getByName("androidMain") {
-                kotlin.srcDir("src/jvmAndAndroidMain/kotlin")
-                dependencies {
-                    implementation("androidx.annotation:annotation:1.9.1")
-                }
-            }
+            api(project(":llm"))
         }
     }
 }
 
 if (androidEnabled) {
     apply(from = "build-android.gradle")
-}
-
-if (iosEnabled) {
-    apply(from = "build-ios.gradle")
 }

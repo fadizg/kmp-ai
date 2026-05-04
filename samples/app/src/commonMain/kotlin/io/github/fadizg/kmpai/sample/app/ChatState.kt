@@ -71,7 +71,18 @@ class ChatState(
             status = "ready"
             isReady = true
         } catch (t: Throwable) {
-            status = "error: ${t.message}"
+            t.printStackTrace()
+            val cause = generateSequence(t.cause) { it.cause }.lastOrNull()
+            status = buildString {
+                append("error: ")
+                append(t.message)
+                if (cause != null) {
+                    append(" — ")
+                    append(cause::class.simpleName)
+                    append(": ")
+                    append(cause.message)
+                }
+            }
         }
     }
 

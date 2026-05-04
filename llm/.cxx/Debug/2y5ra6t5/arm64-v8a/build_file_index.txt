@@ -1,0 +1,12 @@
+/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/CMakeLists.txt
+/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/llama.cpp/CMakeLists.txt
+/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/llama.cpp/cmake/build-info.cmake
+/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/llama.cpp/cmake/common.cmake
+/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/llama.cpp/cmake/license.cmake
+/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/llama.cpp/cmake/llama-config.cmake.in
+/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/llama.cpp/ggml/CMakeLists.txt
+/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/llama.cpp/ggml/cmake/common.cmake
+/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/llama.cpp/ggml/cmake/ggml-config.cmake.in
+/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/llama.cpp/ggml/src/CMakeLists.txt
+/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/llama.cpp/ggml/src/ggml-cpu/CMakeLists.txt
+/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/llama.cpp/src/CMakeLists.txt

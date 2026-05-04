@@ -1,0 +1,76 @@
+{
+  "buildFiles": [
+    "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/CMakeLists.txt",
+    "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/llama.cpp/CMakeLists.txt",
+    "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/llama.cpp/cmake/build-info.cmake",
+    "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/llama.cpp/cmake/common.cmake",
+    "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/llama.cpp/cmake/license.cmake",
+    "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/llama.cpp/cmake/llama-config.cmake.in",
+    "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/llama.cpp/ggml/CMakeLists.txt",
+    "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/llama.cpp/ggml/cmake/common.cmake",
+    "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/llama.cpp/ggml/cmake/ggml-config.cmake.in",
+    "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/llama.cpp/ggml/src/CMakeLists.txt",
+    "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/llama.cpp/ggml/src/ggml-cpu/CMakeLists.txt",
+    "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/src/androidMain/cpp/llama.cpp/src/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/Users/fadi.zgheib/Library/Android/sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/.cxx/Debug/2y5ra6t5/arm64-v8a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/Users/fadi.zgheib/Library/Android/sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/.cxx/Debug/2y5ra6t5/arm64-v8a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "ggml-base::@94de48a0d5830e0c5d2f": {
+      "artifactName": "ggml-base",
+      "abi": "arm64-v8a",
+      "output": "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/.cxx/Debug/2y5ra6t5/arm64-v8a/bin/libggml-base.so",
+      "runtimeFiles": []
+    },
+    "ggml::@94de48a0d5830e0c5d2f": {
+      "artifactName": "ggml",
+      "abi": "arm64-v8a",
+      "output": "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/.cxx/Debug/2y5ra6t5/arm64-v8a/bin/libggml.so",
+      "runtimeFiles": [
+        "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/.cxx/Debug/2y5ra6t5/arm64-v8a/bin/libggml-cpu.so",
+        "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/.cxx/Debug/2y5ra6t5/arm64-v8a/bin/libggml-base.so"
+      ]
+    },
+    "kmpai_llama::@6890427a1f51a3e7e1df": {
+      "artifactName": "kmpai_llama",
+      "abi": "arm64-v8a",
+      "output": "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/build/intermediates/cxx/Debug/2y5ra6t5/obj/arm64-v8a/libkmpai_llama.so",
+      "runtimeFiles": [
+        "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/.cxx/Debug/2y5ra6t5/arm64-v8a/bin/libllama.so",
+        "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/.cxx/Debug/2y5ra6t5/arm64-v8a/bin/libggml.so",
+        "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/.cxx/Debug/2y5ra6t5/arm64-v8a/bin/libggml-cpu.so",
+        "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/.cxx/Debug/2y5ra6t5/arm64-v8a/bin/libggml-base.so"
+      ]
+    },
+    "llama::@fb8c1886b26de7beabc1": {
+      "artifactName": "llama",
+      "abi": "arm64-v8a",
+      "output": "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/.cxx/Debug/2y5ra6t5/arm64-v8a/bin/libllama.so",
+      "runtimeFiles": [
+        "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/.cxx/Debug/2y5ra6t5/arm64-v8a/bin/libggml.so",
+        "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/.cxx/Debug/2y5ra6t5/arm64-v8a/bin/libggml-cpu.so",
+        "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/.cxx/Debug/2y5ra6t5/arm64-v8a/bin/libggml-base.so"
+      ]
+    },
+    "ggml-cpu::@94de48a0d5830e0c5d2f": {
+      "artifactName": "ggml-cpu",
+      "abi": "arm64-v8a",
+      "output": "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/.cxx/Debug/2y5ra6t5/arm64-v8a/bin/libggml-cpu.so",
+      "runtimeFiles": [
+        "/Users/fadi.zgheib/Desktop/Projects/kmp-ai/llm/.cxx/Debug/2y5ra6t5/arm64-v8a/bin/libggml-base.so"
+      ]
+    }
+  }
+}

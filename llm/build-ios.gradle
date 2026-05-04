@@ -1,0 +1,36 @@
+// iOS-only configuration loaded from build.gradle.kts when KMP_AI_IOS=true.
+// Wires up cinterop bindings + linker flags for each iOS target against
+// a prebuilt llama.xcframework.
+//
+// The xcframework is expected at $rootDir/.cache/llama.xcframework or at
+// the path given by the `kmp-ai.iosFramework` Gradle property /
+// `KMP_AI_IOS_FRAMEWORK` env var.
+//
+// To produce the xcframework from upstream llama.cpp:
+//   cd llama.cpp && cmake --workflow ios-arm64-release
+//   cp -R build-ios/llama.xcframework <repo>/.cache/llama.xcframework
+//
+// Written in Groovy for the same reason as build-android.gradle.
+
+def frameworkPath = (findProperty('kmp-ai.iosFramework')?.toString()?.trim()
+    ?: System.getenv('KMP_AI_IOS_FRAMEWORK')?.trim()
+    ?: "${rootDir}/.cache/llama.xcframework")
+
+kotlin {
+    [iosArm64(), iosSimulatorArm64(), iosX64()].each { target ->
+        def slice = target.name == 'iosArm64' ? 'ios-arm64' : 'ios-arm64_x86_64-simulator'
+        def sliceDir = "${frameworkPath}/${slice}"
+
+        target.compilations.named('main').configure {
+            cinterops.create('llama') {
+                defFile = file('src/iosMain/cinterop/llama.def')
+                compilerOpts "-F${sliceDir}", '-fmodules'
+                extraOpts '-libraryPath', sliceDir
+            }
+        }
+
+        target.binaries.all {
+            linkerOpts "-F${sliceDir}", '-framework', 'llama'
+        }
+    }
+}

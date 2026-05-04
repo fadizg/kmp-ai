@@ -64,17 +64,12 @@ import io.github.fadizg.kmpai.catalog.Qwen
 import io.github.fadizg.kmpai.llm.*
 
 suspend fun main() {
-    // 1. Resolve a model — downloads on first run, cached afterwards
-    val repository = DefaultModelRepository(JvmModelCache.userCacheDir())
-    val modelPath = repository.path(Qwen.Qwen2_5_0_5B_Q4)
+    // Construct once. JVM/iOS take no args; Android takes a Context.
+    val env = LlmEnvironment()
 
-    // 2. Load the engine
-    LlmEngineFactory().load(
-        modelPath = modelPath,
-        config = EngineConfig(contextSize = 2048),
-    ).use { engine ->
-
-        // 3. Chat
+    // load() resolves the model (downloading + caching on first run)
+    // and loads it into a fresh engine.
+    env.load(Qwen.Qwen2_5_0_5B_Q4).use { engine ->
         val chat = ChatSession(
             engine = engine,
             template = Qwen.template,
@@ -86,9 +81,67 @@ suspend fun main() {
 }
 ```
 
-On Android, swap `JvmModelCache.userCacheDir()` for `AndroidModelCache.forContext(context)`.
-On iOS, use `IosModelRepository(IosModelCache.userCacheDirUrl())` instead of
-`DefaultModelRepository`.
+That's the whole API surface for the common case. `LlmEnvironment` bundles
+the platform-appropriate `ModelRepository` and `LlmEngineFactory` behind one
+class, so `commonMain` code works as-is everywhere — only the constructor
+differs:
+
+```kotlin
+LlmEnvironment()                  // JVM, iOS
+LlmEnvironment(applicationContext) // Android
+```
+
+If you want progress callbacks during the download, use the underlying
+repository directly:
+
+```kotlin
+env.repository.resolve(source).collect { progress ->
+    when (progress) {
+        is DownloadProgress.Running -> println("${progress.bytes / 1_000_000} MB")
+        is DownloadProgress.Done    -> println("ready")
+        is DownloadProgress.Failed  -> throw progress.cause
+    }
+}
+val engine = env.load(source)
+```
+
+## Integrating into an existing KMP project
+
+After adding the dependency (see [Installation](#installation)), wire
+`LlmEnvironment` into your DI container once per platform. With Koin:
+
+```kotlin
+// shared/src/androidMain/.../KoinModule.kt
+actual fun platformModule(): Module = module {
+    single { LlmEnvironment(androidContext()) }
+}
+
+// shared/src/jvmMain/.../KoinModule.kt
+actual fun platformModule(): Module = module {
+    single { LlmEnvironment() }
+}
+
+// shared/src/iosMain/.../KoinModule.kt
+actual fun platformModule(): Module = module {
+    single { LlmEnvironment() }
+}
+```
+
+Then `commonMain` consumes it like any other dependency:
+
+```kotlin
+// shared/src/commonMain/.../ChatRepository.kt
+class ChatRepository(private val env: LlmEnvironment) {
+    suspend fun reply(userMessage: String): Flow<String> = flow {
+        val engine = env.load(Qwen.Qwen2_5_0_5B_Q4)
+        ChatSession(engine, Qwen.template).send(userMessage)
+            .collect { emit(it.text) }
+    }
+}
+```
+
+You don't need to write your own `ModelPathResolver`, `*ModelCache`, or
+per-platform repository wiring — `LlmEnvironment` is the abstraction.
 
 ## Concepts
 

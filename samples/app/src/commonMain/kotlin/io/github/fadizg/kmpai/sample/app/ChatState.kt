@@ -8,8 +8,7 @@ import io.github.fadizg.kmpai.llm.ChatTemplate
 import io.github.fadizg.kmpai.llm.DownloadProgress
 import io.github.fadizg.kmpai.llm.EngineConfig
 import io.github.fadizg.kmpai.llm.LlmEngine
-import io.github.fadizg.kmpai.llm.LlmEngineFactory
-import io.github.fadizg.kmpai.llm.ModelRepository
+import io.github.fadizg.kmpai.llm.LlmEnvironment
 import io.github.fadizg.kmpai.llm.ModelSource
 import io.github.fadizg.kmpai.llm.SamplingParams
 import kotlinx.coroutines.CoroutineScope
@@ -23,11 +22,10 @@ data class ChatLine(val author: Author, val text: String) {
 }
 
 class ChatState(
+    private val env: LlmEnvironment,
     private val source: ModelSource,
     private val template: ChatTemplate,
     private val systemPrompt: String?,
-    private val repository: ModelRepository,
-    private val factory: LlmEngineFactory = LlmEngineFactory(),
 ) {
     var status: String by mutableStateOf("preparing…")
         private set
@@ -49,7 +47,7 @@ class ChatState(
     suspend fun prepare() {
         status = "downloading model…"
         try {
-            repository.resolve(source).onEach { progress ->
+            env.repository.resolve(source).onEach { progress ->
                 when (progress) {
                     is DownloadProgress.Running -> {
                         status = "downloading… ${progress.bytes / 1_000_000} MB"
@@ -64,8 +62,7 @@ class ChatState(
                     }
                 }
             }.collect()
-            val path = repository.path(source)
-            val loaded = factory.load(path, EngineConfig(contextSize = 2048, gpuLayers = 0))
+            val loaded = env.load(source, EngineConfig(contextSize = 2048))
             engine = loaded
             session = ChatSession(loaded, template, systemPrompt)
             status = "ready"

@@ -1,8 +1,7 @@
 package io.github.fadizg.kmpai.llm
 
 import platform.UIKit.UIDevice
-import platform.UIKit.UIDeviceBatteryStateCharging
-import platform.UIKit.UIDeviceBatteryStateFull
+import platform.UIKit.UIDeviceBatteryState
 
 @ExperimentalKmpAiApi
 internal actual fun checkDownloadConstraints(
@@ -11,7 +10,11 @@ internal actual fun checkDownloadConstraints(
     if (constraints.requiresCharging) {
         UIDevice.currentDevice.batteryMonitoringEnabled = true
         val state = UIDevice.currentDevice.batteryState
-        if (state != UIDeviceBatteryStateCharging && state != UIDeviceBatteryStateFull) {
+        // Kotlin 2.2.x exposes the constants as UIDeviceBatteryState enum values
+        // rather than top-level Ints.
+        if (state != UIDeviceBatteryState.UIDeviceBatteryStateCharging &&
+            state != UIDeviceBatteryState.UIDeviceBatteryStateFull
+        ) {
             return ConstraintNotMetException("download blocked: requires charging (requiresCharging=true)")
         }
     }

@@ -8,14 +8,20 @@
 //      llama.cpp's GitHub Release on first iOS build via the
 //      `downloadLlamaXcframework` task.
 //
-// The auto-download is wired as a dependency of every iOS cinterop and link
-// task, so source / composite-build consumers don't have to fetch anything
-// manually. Maven-published consumers (future) would either supply their own
-// xcframework or apply our Gradle convention plugin (TODO).
+// The auto-download uses a llama.cpp release tag (`bXXXX`) that ships an
+// `llama-bXXXX-xcframework.zip` asset. Override the version with:
+//   -Pkmp-ai.llamaCppBuild=b3030
+// or by setting KMP_AI_LLAMA_BUILD in the environment. To find a valid
+// recent build, check
+//   https://github.com/ggml-org/llama.cpp/releases
+// Older numeric tags may have been pruned; pick a recent one with the
+// xcframework asset attached.
 //
 // Written in Groovy for the same reason as build-android.gradle.
 
-def llamaCppBuild = 'b9018'
+def llamaCppBuild = (findProperty('kmp-ai.llamaCppBuild')?.toString()?.trim()
+    ?: System.getenv('KMP_AI_LLAMA_BUILD')?.trim()
+    ?: 'b6817')
 def cacheDir = file("${rootDir}/.cache")
 def autoFramework = file("${cacheDir}/llama.xcframework")
 def frameworkPath = (findProperty('kmp-ai.iosFramework')?.toString()?.trim()
@@ -28,7 +34,8 @@ tasks.register('downloadLlamaXcframework') {
     group = 'kmp-ai'
 
     def zipFile = file("${cacheDir}/llama-${llamaCppBuild}-xcframework.zip")
-    def url = "https://github.com/ggml-org/llama.cpp/releases/download/${llamaCppBuild}/llama-${llamaCppBuild}-xcframework.zip"
+    def assetName = "llama-${llamaCppBuild}-xcframework.zip"
+    def url = "https://github.com/ggml-org/llama.cpp/releases/download/${llamaCppBuild}/${assetName}"
 
     outputs.dir(autoFramework)
     onlyIf { !autoFramework.exists() }
@@ -36,8 +43,29 @@ tasks.register('downloadLlamaXcframework') {
     doLast {
         cacheDir.mkdirs()
         if (!zipFile.exists()) {
-            println "kmp-ai: fetching llama.xcframework (${llamaCppBuild}) from llama.cpp release…"
-            ant.get(src: url, dest: zipFile.absolutePath, verbose: false, usetimestamp: true)
+            println "kmp-ai: fetching llama.xcframework (${llamaCppBuild}) from"
+            println "  ${url}"
+            try {
+                ant.get(
+                    src: url,
+                    dest: zipFile.absolutePath,
+                    verbose: true,
+                    usetimestamp: true,
+                    retries: 2,
+                )
+            } catch (Exception e) {
+                throw new GradleException(
+                    "Could not download ${url}\n" +
+                    "  Likely causes:\n" +
+                    "    - Tag '${llamaCppBuild}' has no '${assetName}' asset.\n" +
+                    "    - Tag was deleted by upstream.\n" +
+                    "    - Network is blocking github.com or a CDN redirect.\n" +
+                    "  To pick a different llama.cpp release, set:\n" +
+                    "    -Pkmp-ai.llamaCppBuild=bXXXX\n" +
+                    "  See https://github.com/ggml-org/llama.cpp/releases for current tags.",
+                    e,
+                )
+            }
         }
         ant.unzip(src: zipFile.absolutePath, dest: cacheDir.absolutePath, overwrite: true)
         if (!autoFramework.exists()) {

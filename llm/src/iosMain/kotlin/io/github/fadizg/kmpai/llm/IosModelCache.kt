@@ -1,10 +1,12 @@
 package io.github.fadizg.kmpai.llm
 
+import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSCachesDirectory
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSURL
 import platform.Foundation.NSUserDomainMask
 
+@OptIn(ExperimentalForeignApi::class)
 object IosModelCache {
     /**
      * Returns `<NSCachesDirectory>/kmp-ai/models`, creating it if needed.

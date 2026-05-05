@@ -1,8 +1,19 @@
 jdk:
   - openjdk21
 
-# JitPack runs on Linux, so iOS targets can't be built here.
-# Disable iOS via the standard Gradle property; Android stays on if the
-# JitPack image has the SDK + NDK 27 available.
+env:
+  global:
+    # Tell sdkmanager to skip the interactive license prompt.
+    - ANDROID_NDK_VERSION=27.0.12077973
+    - CMAKE_VERSION=3.22.1
+
+before_install:
+  # JitPack's Linux image has the Android SDK at $ANDROID_HOME but NDK 27 is
+  # not pre-installed. Auto-accept licenses and pull what AGP needs.
+  - yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+  - $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;${ANDROID_NDK_VERSION}" "cmake;${CMAKE_VERSION}"
+
 install:
+  # iOS targets cannot link on Linux — disable explicitly.
+  # Android stays on so the published AAR includes arm64-v8a / x86_64 .so files.
   - ./gradlew :llm:publishToMavenLocal :llm-catalog-qwen:publishToMavenLocal :llm-catalog-gemma:publishToMavenLocal -Pkmp-ai.version=$VERSION -Pkmp-ai.ios=false -x test

@@ -58,7 +58,7 @@ class ChatState(
                         downloadFraction = null
                     }
                     is DownloadProgress.Failed -> {
-                        status = "download failed: ${progress.cause.message}"
+                        status = "download failed: ${progress.error.message}"
                     }
                 }
             }.collect()

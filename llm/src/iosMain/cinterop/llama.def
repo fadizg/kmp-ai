@@ -1,3 +1,3 @@
 package = io.github.fadizg.kmpai.llm.llamacpp
-language = C
+language = Objective-C
 modules = llama

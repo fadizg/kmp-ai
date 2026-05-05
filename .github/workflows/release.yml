@@ -1,0 +1,106 @@
+name: Release
+
+# Triggered by pushing a `v*.*.*` tag (e.g. `v0.2.0`). Runs on macOS so the
+# iOS targets and the cinterop-driven xcframework download all work natively.
+#
+# Publishes:
+#   - All KMP variants (jvm / android / iosArm64 / iosSimulatorArm64 / iosX64)
+#     to Maven Central via the vanniktech publish plugin.
+#   - The Android AAR with prebuilt libllama.so / libggml.so / libkmpai_llama.so
+#     for arm64-v8a and x86_64 (built by AGP/CMake on the runner — consumers
+#     don't need NDK locally afterwards).
+#   - The bundled llama.xcframework attached to the GitHub Release as a
+#     downloadable asset (so iOS consumers without composite-build can
+#     resolve it via -Pkmp-ai.iosFramework=...).
+#
+# Required GitHub Actions secrets (set under Settings → Secrets → Actions):
+#   MAVEN_CENTRAL_USERNAME      Sonatype Central Portal user token
+#   MAVEN_CENTRAL_PASSWORD      Sonatype Central Portal password token
+#   SIGNING_KEY                 ASCII-armored GPG private key (gpg --export-secret-keys --armor <KEYID>)
+#   SIGNING_KEY_ID              Last 8 chars of the GPG key id
+#   SIGNING_PASSWORD            Passphrase for the key
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version override (e.g. 0.2.0). Leave blank to use the tag.'
+        required: false
+
+jobs:
+  publish:
+    runs-on: macos-latest
+    permissions:
+      contents: write   # for uploading release assets
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "value=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK + NDK 27
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0 ndk;27.0.12077973 cmake;3.22.1'
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Cache .cache (xcframework)
+        uses: actions/cache@v4
+        with:
+          path: .cache
+          key: llama-xcframework-b9018
+
+      - name: Publish to Maven Central
+        run: |
+          ./gradlew publishToMavenCentral \
+            -Pkmp-ai.version=${{ steps.version.outputs.value }} \
+            --no-configuration-cache --stacktrace
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
+
+      - name: Stage llama.xcframework for release asset
+        run: |
+          mkdir -p build/release
+          cd .cache && zip -r "../build/release/llama.xcframework.zip" llama.xcframework
+
+      - name: Upload xcframework to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/release/llama.xcframework.zip
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.value, '-') }}

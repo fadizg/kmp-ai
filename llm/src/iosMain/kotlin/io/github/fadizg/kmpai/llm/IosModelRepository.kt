@@ -13,12 +13,14 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.last
+import kotlinx.coroutines.withContext
 import platform.CoreCrypto.CC_SHA256
 import platform.CoreCrypto.CC_SHA256_DIGEST_LENGTH
 import platform.Foundation.NSData
 import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSHTTPURLResponse
+import platform.Foundation.NSMutableURLRequest
 import platform.Foundation.NSURL
 import platform.Foundation.NSURLRequest
 import platform.Foundation.NSURLResponse
@@ -99,7 +101,13 @@ class IosModelRepository(
 
             val nsUrl = NSURL.URLWithString(sourceUrlString)
                 ?: throw ModelDownloadException("invalid url: $sourceUrlString")
-            val request = NSURLRequest.requestWithURL(nsUrl)
+            val request = NSMutableURLRequest.requestWithURL(nsUrl)
+            (source as? ModelSource.HuggingFace)?.auth?.let { auth ->
+                when (auth) {
+                    is HuggingFaceAuth.Token ->
+                        request.setValue("Bearer ${auth.token}", forHTTPHeaderField = "Authorization")
+                }
+            }
             val session = NSURLSession.sessionWithConfiguration(
                 NSURLSessionConfiguration.ephemeralSessionConfiguration,
                 delegate,
@@ -120,7 +128,7 @@ class IosModelRepository(
         return when (val end = resolve(source).last()) {
             is DownloadProgress.Done -> end.path
             is DownloadProgress.Failed -> throw ModelDownloadException(
-                "failed to resolve ${source.id}", end.cause,
+                "failed to resolve ${source.id}", end.error,
             )
             is DownloadProgress.Running -> error("unreachable: flow ended on Running")
         }
@@ -131,11 +139,11 @@ class IosModelRepository(
         NSFileManager.defaultManager.removeItemAtPath(target, null)
     }
 
-    override fun list(): List<CachedModel> {
-        val basePath = cacheDirUrl.path ?: return emptyList()
+    override suspend fun list(): List<CachedModel> = withContext(Dispatchers.Default) {
+        val basePath = cacheDirUrl.path ?: return@withContext emptyList()
         val mgr = NSFileManager.defaultManager
         val out = mutableListOf<CachedModel>()
-        val enumerator = mgr.enumeratorAtPath(basePath) ?: return emptyList()
+        val enumerator = mgr.enumeratorAtPath(basePath) ?: return@withContext emptyList()
         while (true) {
             val rel = enumerator.nextObject() as? String ?: break
             if (rel.endsWith(".part")) continue
@@ -146,7 +154,7 @@ class IosModelRepository(
             val size = (attrs["NSFileSize"] as? Number)?.toLong() ?: 0L
             out += CachedModel(id = rel, path = full, sizeBytes = size)
         }
-        return out
+        out
     }
 
     private fun targetUrl(source: ModelSource): NSURL = when (source) {

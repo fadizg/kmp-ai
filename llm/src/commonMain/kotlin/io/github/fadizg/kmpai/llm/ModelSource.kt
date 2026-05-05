@@ -7,6 +7,7 @@ sealed interface ModelSource {
         val repo: String,
         val file: String,
         val revision: String = "main",
+        val auth: HuggingFaceAuth? = null,
     ) : ModelSource {
         override val id: String get() = "hf/$repo@$revision/$file"
         val url: String get() = "https://huggingface.co/$repo/resolve/$revision/$file"

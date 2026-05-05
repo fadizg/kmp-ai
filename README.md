@@ -265,10 +265,10 @@ entry points wire in the right `ModelRepository`.
 ./gradlew :samples:app:run
 
 # Android (needs ANDROID_HOME + NDK 27)
-KMP_AI_ANDROID=true ./gradlew :samples:app:installDebug
+./gradlew :samples:app:installDebug
 
 # iOS (needs llama.xcframework — see "Building from source" below)
-KMP_AI_IOS=true ./gradlew :samples:app:linkDebugFrameworkIosArm64
+./gradlew :samples:app:linkDebugFrameworkIosArm64
 # then embed ComposeApp.framework in an Xcode project, present MainViewController()
 ```
 
@@ -284,18 +284,29 @@ git submodule update --init --recursive   # only needed for Android (vendors lla
 ./gradlew :samples:app:run                # desktop UI
 ```
 
-Android and iOS targets are gated on env vars so the JVM build stays green
-without their toolchains.
+By default all targets (JVM, Android, iOS) are declared. If you don't have a
+particular toolchain locally, disable that target with a Gradle property:
+
+```bash
+# command line
+./gradlew build -Pkmp-ai.android=false -Pkmp-ai.ios=false
+
+# permanent: add to ~/.gradle/gradle.properties
+kmp-ai.android=false
+kmp-ai.ios=false
+```
+
+`KMP_AI_ANDROID` / `KMP_AI_IOS` env vars still work as a fallback for CI.
 
 ### Android prerequisites
 
-- Android SDK (`ANDROID_HOME` set)
+- Android SDK (`ANDROID_HOME` set, or `local.properties` with `sdk.dir`)
 - NDK 27.0.12077973 (the CMake config requires this exact version)
 - ~3 GB free for the llama.cpp build artifacts
 
 ```bash
-KMP_AI_ANDROID=true ./gradlew :llm:assembleRelease
-KMP_AI_ANDROID=true ./gradlew :samples:app:installDebug
+./gradlew :llm:assembleRelease
+./gradlew :samples:app:installDebug
 ```
 
 First Android build is slow (~5 min) because llama.cpp is compiled from source
@@ -305,8 +316,7 @@ per ABI; incremental builds are fast.
 
 - Xcode + macOS host
 - A prebuilt `llama.xcframework` at `$rootDir/.cache/llama.xcframework`,
-  overridable via `kmp-ai.iosFramework` Gradle property or `KMP_AI_IOS_FRAMEWORK`
-  env var
+  overridable via the `kmp-ai.iosFramework` Gradle property
 
 To produce the xcframework from upstream llama.cpp:
 
@@ -320,7 +330,7 @@ cp -R build-ios/llama.xcframework /path/to/kmp-ai/.cache/llama.xcframework
 Then:
 
 ```bash
-KMP_AI_IOS=true ./gradlew :llm:linkDebugFrameworkIosArm64
+./gradlew :llm:linkDebugFrameworkIosArm64
 ```
 
 ## Why a model repository instead of bundled weights?
@@ -373,10 +383,11 @@ All targets work, source changes are picked up immediately.
 ### 3. mavenLocal (single machine)
 
 ```bash
-# in kmp-ai
+# in kmp-ai (all targets on by default — needs Android SDK + iOS xcframework)
 ./gradlew publishToMavenLocal -Pkmp-ai.version=0.1.0
-# enable extra targets at publish time:
-KMP_AI_ANDROID=true KMP_AI_IOS=true ./gradlew publishToMavenLocal -Pkmp-ai.version=0.1.0
+
+# JVM-only publish on a machine without those toolchains:
+./gradlew publishToMavenLocal -Pkmp-ai.version=0.1.0 -Pkmp-ai.android=false -Pkmp-ai.ios=false
 ```
 
 ```kotlin
@@ -447,10 +458,11 @@ kmp-ai/
 
 ## Caveats
 
-- **Variants are publish-time gated.** A Maven artifact published without
-  `KMP_AI_ANDROID=true` has no Android variant — Android consumers can't
-  resolve it. Publish from a Mac with both env vars set to get a fully
-  multi-target artifact.
+- **Variants are publish-time gated.** A Maven artifact published with
+  `kmp-ai.android=false` has no Android variant — Android consumers can't
+  resolve it. The default ("all targets on") works as long as the publishing
+  machine has the right toolchains; publish from a Mac with the Android SDK
+  and `llama.xcframework` to get a fully multi-target artifact.
 - **No prebuilt natives in the AAR.** Android consumers' first build runs
   CMake on the bundled llama.cpp.
 - **iOS consumers must provide their own xcframework.** No automatic
@@ -466,8 +478,9 @@ kmp-ai/
 ## Requirements
 
 - JDK 21 (auto-provisioned via Gradle toolchain)
-- For Android: Android SDK + NDK 27 + `KMP_AI_ANDROID=true`
-- For iOS: macOS + Xcode + `llama.xcframework` + `KMP_AI_IOS=true`
+- For Android: Android SDK + NDK 27
+- For iOS: macOS + Xcode + `llama.xcframework`
+- To opt out of either target: `-Pkmp-ai.android=false` / `-Pkmp-ai.ios=false`
 
 ## License
 

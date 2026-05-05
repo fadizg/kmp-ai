@@ -82,7 +82,18 @@ kotlin {
         target.compilations.named('main').configure {
             cinterops.create('llama') {
                 defFile = file('src/iosMain/cinterop/llama.def')
-                compilerOpts "-F${sliceDir}", '-fmodules'
+                // Don't rely on `modules = llama` / `module.modulemap` — recent
+                // llama.cpp xcframeworks ship without one. Add the framework
+                // Headers directories to the include path explicitly so the
+                // compiler can resolve `#include "llama.h"` and any transitive
+                // ggml.h includes regardless of whether ggml is split into its
+                // own framework.
+                compilerOpts(
+                    "-F${sliceDir}",
+                    "-I${sliceDir}/llama.framework/Headers",
+                    "-I${sliceDir}/ggml.framework/Headers",
+                    '-fmodules',
+                )
                 extraOpts '-libraryPath', sliceDir
             }
         }

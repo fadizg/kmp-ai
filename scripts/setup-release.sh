@@ -69,7 +69,9 @@ Expire-Date: 5y
 %ask-passphrase
 %commit
 EOF
-    gpg --gen-key "$BATCH"
+    # `--batch` is required by gpg ≥ 2.x to read the parameter file.
+    # `%ask-passphrase` still triggers pinentry interactively under --batch.
+    gpg --batch --gen-key "$BATCH"
     rm -f "$BATCH"
     PRIMARY_KEY="$(find_signing_key || true)"
 fi

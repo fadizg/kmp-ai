@@ -1,20 +1,50 @@
-// iOS-only configuration loaded from build.gradle.kts when KMP_AI_IOS=true.
-// Wires up cinterop bindings + linker flags for each iOS target against
-// a prebuilt llama.xcframework.
+// iOS-only configuration. Wires up cinterop bindings + linker flags for each
+// iOS target against a prebuilt llama.xcframework.
 //
-// The xcframework is expected at $rootDir/.cache/llama.xcframework or at
-// the path given by the `kmp-ai.iosFramework` Gradle property /
-// `KMP_AI_IOS_FRAMEWORK` env var.
+// Where does the xcframework come from?
+//   1. `kmp-ai.iosFramework` Gradle property or KMP_AI_IOS_FRAMEWORK env var
+//      (consumer-supplied path) — used as-is, no download.
+//   2. Otherwise: $rootDir/.cache/llama.xcframework — auto-downloaded from
+//      llama.cpp's GitHub Release on first iOS build via the
+//      `downloadLlamaXcframework` task.
 //
-// To produce the xcframework from upstream llama.cpp:
-//   cd llama.cpp && cmake --workflow ios-arm64-release
-//   cp -R build-ios/llama.xcframework <repo>/.cache/llama.xcframework
+// The auto-download is wired as a dependency of every iOS cinterop and link
+// task, so source / composite-build consumers don't have to fetch anything
+// manually. Maven-published consumers (future) would either supply their own
+// xcframework or apply our Gradle convention plugin (TODO).
 //
 // Written in Groovy for the same reason as build-android.gradle.
 
+def llamaCppBuild = 'b9018'
+def cacheDir = file("${rootDir}/.cache")
+def autoFramework = file("${cacheDir}/llama.xcframework")
 def frameworkPath = (findProperty('kmp-ai.iosFramework')?.toString()?.trim()
     ?: System.getenv('KMP_AI_IOS_FRAMEWORK')?.trim()
-    ?: "${rootDir}/.cache/llama.xcframework")
+    ?: autoFramework.absolutePath)
+def usingAutoFramework = (frameworkPath == autoFramework.absolutePath)
+
+tasks.register('downloadLlamaXcframework') {
+    description = "Downloads llama.xcframework (${llamaCppBuild}) into \$rootDir/.cache/ if not already present."
+    group = 'kmp-ai'
+
+    def zipFile = file("${cacheDir}/llama-${llamaCppBuild}-xcframework.zip")
+    def url = "https://github.com/ggml-org/llama.cpp/releases/download/${llamaCppBuild}/llama-${llamaCppBuild}-xcframework.zip"
+
+    outputs.dir(autoFramework)
+    onlyIf { !autoFramework.exists() }
+
+    doLast {
+        cacheDir.mkdirs()
+        if (!zipFile.exists()) {
+            println "kmp-ai: fetching llama.xcframework (${llamaCppBuild}) from llama.cpp release…"
+            ant.get(src: url, dest: zipFile.absolutePath, verbose: false, usetimestamp: true)
+        }
+        ant.unzip(src: zipFile.absolutePath, dest: cacheDir.absolutePath, overwrite: true)
+        if (!autoFramework.exists()) {
+            throw new GradleException("downloadLlamaXcframework: expected ${autoFramework} after unzip; check ${zipFile}.")
+        }
+    }
+}
 
 kotlin {
     [iosArm64(), iosSimulatorArm64(), iosX64()].each { target ->
@@ -32,5 +62,16 @@ kotlin {
         target.binaries.all {
             linkerOpts "-F${sliceDir}", '-framework', 'llama'
         }
+    }
+}
+
+// Wire the download task in front of every iOS cinterop / link step so that
+// source-build consumers don't have to remember to run it manually.
+if (usingAutoFramework) {
+    tasks.matching { task ->
+        task.name.startsWith('cinteropLlamaIos') ||
+            (task.name.startsWith('linkDebugFrameworkIos') || task.name.startsWith('linkReleaseFrameworkIos'))
+    }.configureEach {
+        dependsOn 'downloadLlamaXcframework'
     }
 }

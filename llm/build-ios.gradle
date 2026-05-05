@@ -87,12 +87,12 @@ kotlin {
                 // Headers directories to the include path explicitly so the
                 // compiler can resolve `#include "llama.h"` and any transitive
                 // ggml.h includes regardless of whether ggml is split into its
-                // own framework.
+                // own framework. Note: -fmodules is incompatible with the
+                // `headers = …` def-file directive, so it's omitted.
                 compilerOpts(
                     "-F${sliceDir}",
                     "-I${sliceDir}/llama.framework/Headers",
                     "-I${sliceDir}/ggml.framework/Headers",
-                    '-fmodules',
                 )
                 extraOpts '-libraryPath', sliceDir
             }

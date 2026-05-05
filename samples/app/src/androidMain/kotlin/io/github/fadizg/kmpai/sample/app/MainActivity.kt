@@ -11,7 +11,7 @@ class MainActivity : ComponentActivity() {
 
     private val state by lazy {
         ChatState(
-            env = LlmEnvironment(applicationContext),
+            env = LlmEnvironment.default(),
             source = Qwen.Qwen2_5_0_5B_Q4,
             template = Qwen.template,
             systemPrompt = "You are a concise, helpful assistant. Reply in one short paragraph.",

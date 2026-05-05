@@ -5,30 +5,19 @@ package io.github.fadizg.kmpai.llm
  * [LlmEngineFactory] for the current platform; [load] resolves a model and
  * loads it into a fresh engine in one call.
  *
- * Construction is the only thing that differs between platforms:
- *
- *   - JVM:     `LlmEnvironment()`
- *   - Android: `LlmEnvironment(context)`
- *   - iOS:     `LlmEnvironment()`
- *
- * Wire it once into your DI container, then everything downstream stays in
- * `commonMain`.
+ * The recommended way to obtain an instance is [Companion.default]:
  *
  * ```kotlin
- * // androidMain
- * single { LlmEnvironment(androidContext()) }
- *
- * // jvmMain / iosMain
- * single { LlmEnvironment() }
- *
- * // commonMain
- * val env: LlmEnvironment = get()
+ * val env = LlmEnvironment.default()        // works on JVM, Android, iOS
  * val engine = env.load(Qwen.Qwen2_5_0_5B_Q4)
  * ```
  *
- * Pass your own [ModelRepository] / [LlmEngineFactory] to override the
- * defaults (for example if you bundle the model file with the app and don't
- * want kmp-ai's cache directory at all).
+ * On Android this works without passing a `Context` because the library
+ * registers an AndroidX Startup `Initializer` via its manifest, which captures
+ * the Application context at process start. If your consumer app has disabled
+ * AndroidX Startup, fall back to `LlmEnvironment(context)`.
+ *
+ * Pass your own [ModelRepository] / [LlmEngineFactory] to override the defaults.
  */
 expect class LlmEnvironment {
     val repository: ModelRepository
@@ -43,4 +32,9 @@ expect class LlmEnvironment {
         source: ModelSource,
         config: EngineConfig = EngineConfig(),
     ): LlmEngine
+
+    companion object {
+        /** Platform-default environment. Zero-arg on every platform. */
+        fun default(): LlmEnvironment
+    }
 }

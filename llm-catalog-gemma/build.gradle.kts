@@ -1,12 +1,12 @@
 val androidEnabled: Boolean =
-    System.getenv("KMP_AI_ANDROID")?.toBoolean()
-        ?: System.getProperty("kmp-ai.android")?.toBoolean()
-        ?: false
+    (findProperty("kmp-ai.android") as String?)?.toBooleanStrictOrNull()
+        ?: System.getenv("KMP_AI_ANDROID")?.toBooleanStrictOrNull()
+        ?: true
 
 val iosEnabled: Boolean =
-    System.getenv("KMP_AI_IOS")?.toBoolean()
-        ?: System.getProperty("kmp-ai.ios")?.toBoolean()
-        ?: false
+    (findProperty("kmp-ai.ios") as String?)?.toBooleanStrictOrNull()
+        ?: System.getenv("KMP_AI_IOS")?.toBooleanStrictOrNull()
+        ?: true
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)

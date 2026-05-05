@@ -1,10 +1,5 @@
 rootProject.name = "kmp-ai"
 
-val androidEnabled: Boolean =
-    System.getenv("KMP_AI_ANDROID")?.toBoolean()
-        ?: System.getProperty("kmp-ai.android")?.toBoolean()
-        ?: false
-
 pluginManagement {
     repositories {
         gradlePluginPortal()

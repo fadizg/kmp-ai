@@ -1,5 +1,8 @@
 jdk:
   - openjdk21
 
+# JitPack runs on Linux, so iOS targets can't be built here.
+# Disable iOS via the standard Gradle property; Android stays on if the
+# JitPack image has the SDK + NDK 27 available.
 install:
-  - ./gradlew :llm:publishToMavenLocal :llm-catalog-qwen:publishToMavenLocal :llm-catalog-gemma:publishToMavenLocal -Pkmp-ai.version=$VERSION -x test
+  - ./gradlew :llm:publishToMavenLocal :llm-catalog-qwen:publishToMavenLocal :llm-catalog-gemma:publishToMavenLocal -Pkmp-ai.version=$VERSION -Pkmp-ai.ios=false -x test

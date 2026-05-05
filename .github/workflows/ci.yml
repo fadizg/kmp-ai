@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  jvm:
+    name: JVM build (linux, no Android/iOS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21' }
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-jvm-${{ hashFiles('**/*.gradle*', 'gradle/libs.versions.toml') }}
+      - name: Compile JVM + samples
+        run: |
+          ./gradlew :llm:compileKotlinJvm :samples:jvm:compileKotlin :samples:app:compileKotlinJvm \
+            -Pkmp-ai.android=false -Pkmp-ai.ios=false --stacktrace
+      - name: Smoke-test publishToMavenLocal (JVM artifacts only)
+        run: |
+          ./gradlew publishToMavenLocal \
+            -Pkmp-ai.android=false -Pkmp-ai.ios=false \
+            -Pkmp-ai.version=0.0.0-CI-SNAPSHOT --stacktrace
+
+  android:
+    name: Android build (ubuntu + NDK 27)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21' }
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0 ndk;27.0.12077973 cmake;3.22.1'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-android-${{ hashFiles('**/*.gradle*', 'gradle/libs.versions.toml') }}
+      - name: Assemble :llm AAR (with native .so files)
+        run: ./gradlew :llm:assembleRelease -Pkmp-ai.ios=false --stacktrace
+      - name: Confirm .so files are bundled
+        run: |
+          set -eux
+          AAR=$(find llm/build/outputs/aar -name '*-release.aar' | head -1)
+          unzip -l "$AAR" | grep -E 'lib/(arm64-v8a|x86_64)/libkmpai_llama\.so' || {
+            echo "::error::Native libllama/libkmpai_llama .so files missing from AAR"
+            unzip -l "$AAR"
+            exit 1
+          }
+
+  ios:
+    name: iOS build (macos)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21' }
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            .cache
+          key: ${{ runner.os }}-gradle-ios-${{ hashFiles('**/*.gradle*', 'gradle/libs.versions.toml') }}
+      - name: Link iOS framework (arm64)
+        run: ./gradlew :llm:linkDebugFrameworkIosArm64 -Pkmp-ai.android=false --stacktrace

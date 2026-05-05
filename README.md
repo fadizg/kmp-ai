@@ -9,13 +9,31 @@ backed by [llama.cpp](https://github.com/ggml-org/llama.cpp).
 - Curated model catalogs (Qwen 2.5, Gemma 2/3)
 - KMP Compose Multiplatform sample app (Desktop + Android + iOS)
 
+## Compatibility matrix
+
+| Tool                     | Required version       |
+| ------------------------ | ---------------------- |
+| Kotlin                   | 2.0.21 +               |
+| Gradle                   | 8.7 +                  |
+| AGP (Android)            | 8.7 +                  |
+| Compose Multiplatform    | 1.7.3 +                |
+| JDK                      | 21 (toolchain)         |
+| Android SDK / NDK        | API 26 + · NDK 27      |
+| Xcode (iOS)              | 16 +                   |
+| iOS deployment target    | 14.0 +                 |
+
 ## Status
 
-| Target          | Status                                                                   |
-| --------------- | ------------------------------------------------------------------------ |
-| JVM (Desktop)   | Works out of the box — `de.kherud:llama` ships natives for Mac/Linux/Win |
-| Android         | Builds llama.cpp via NDK at consumer build time. Needs NDK 27.           |
-| iOS             | Cinterop bindings against a prebuilt `llama.xcframework`. Bring your own.|
+| Target          | Status                                                                          |
+| --------------- | ------------------------------------------------------------------------------- |
+| JVM (Desktop)   | Works out of the box — `de.kherud:llama` ships natives for Mac/Linux/Win.       |
+| Android         | Needs NDK 27 to build llama.cpp at consumer build time *unless* consumed via Maven Central (where prebuilt `.so` files ship in the AAR — TODO, currently shipped via JitPack rebuild). |
+| iOS             | macOS-only build. `llama.xcframework` auto-downloads on first build via the `downloadLlamaXcframework` Gradle task. |
+
+> ⚠️ **JitPack publishes Android + JVM only** — JitPack runs on Linux, so the
+> iOS Kotlin Multiplatform variants aren't in the JitPack-published artifact.
+> For iOS consumers, use a composite build (`includeBuild("../kmp-ai")`) or
+> wait for the Maven Central pipeline (in progress — see the roadmap).
 
 ## Installation
 
@@ -38,24 +56,55 @@ In the consumer module:
 ```kotlin
 // Plain JVM / Android Gradle module:
 dependencies {
-    implementation("com.github.fadizg.kmp-ai:llm:v0.1.0")
-    implementation("com.github.fadizg.kmp-ai:llm-catalog-qwen:v0.1.0")
+    implementation("com.github.fadizg.kmp-ai:llm:v0.1.4")
+    implementation("com.github.fadizg.kmp-ai:llm-catalog-qwen:v0.1.4")
 }
 
 // KMP module:
 kotlin {
     sourceSets.commonMain.dependencies {
-        implementation("com.github.fadizg.kmp-ai:llm:v0.1.0")
-        implementation("com.github.fadizg.kmp-ai:llm-catalog-qwen:v0.1.0")
+        implementation("com.github.fadizg.kmp-ai:llm:v0.1.4")
+        implementation("com.github.fadizg.kmp-ai:llm-catalog-qwen:v0.1.4")
     }
 }
 ```
 
 > JitPack rewrites the groupId for multi-module repos. Coordinate is
 > `com.github.<owner>.<repo>:<module>:<git-tag>`, **not** the
-> `io.github.fadizg.kmpai` groupId from the POM.
+> `io.github.fadizg.kmpai` groupId from the POM. Use lowercase tag names
+> (`v0.1.4`, not `V0.1.4`) — JitPack's URL is case-sensitive.
 
 Other distribution options are documented under [Distribution](#distribution).
+
+## Drop-in integration (KMP project, ≤ 10 lines)
+
+For a project that already has Koin (or any DI) wired through a shared module:
+
+```kotlin
+// gradle/libs.versions.toml
+[versions]
+kmp-ai = "v0.1.4"
+[libraries]
+kmp-ai-llm           = { module = "com.github.fadizg.kmp-ai:llm",                version.ref = "kmp-ai" }
+kmp-ai-catalog-qwen  = { module = "com.github.fadizg.kmp-ai:llm-catalog-qwen",   version.ref = "kmp-ai" }
+```
+
+```kotlin
+// shared/build.gradle.kts
+sourceSets.commonMain.dependencies {
+    implementation(libs.kmp.ai.llm)
+    implementation(libs.kmp.ai.catalog.qwen)
+}
+```
+
+```kotlin
+// shared/src/commonMain/.../KoinModule.kt
+val llmModule = module {
+    single { LlmEnvironment.default() }
+}
+```
+
+Done. `commonMain` calls `get<LlmEnvironment>().load(Qwen.Qwen2_5_0_5B_Q4)` and gets a real engine on every platform, no per-platform DI bindings, no `Context` plumbing.
 
 ## Quick start
 

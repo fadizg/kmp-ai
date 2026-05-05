@@ -10,7 +10,7 @@ import platform.UIKit.UIViewController
 fun MainViewController(): UIViewController = ComposeUIViewController {
     val state = remember {
         ChatState(
-            env = LlmEnvironment(),
+            env = LlmEnvironment.default(),
             source = Qwen.Qwen2_5_0_5B_Q4,
             template = Qwen.template,
             systemPrompt = "You are a concise, helpful assistant. Reply in one short paragraph.",

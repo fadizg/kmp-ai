@@ -64,8 +64,9 @@ import io.github.fadizg.kmpai.catalog.Qwen
 import io.github.fadizg.kmpai.llm.*
 
 suspend fun main() {
-    // Construct once. JVM/iOS take no args; Android takes a Context.
-    val env = LlmEnvironment()
+    // Zero-arg on every platform — Android picks up the Application context
+    // automatically via AndroidX Startup.
+    val env = LlmEnvironment.default()
 
     // load() resolves the model (downloading + caching on first run)
     // and loads it into a fresh engine.
@@ -81,15 +82,8 @@ suspend fun main() {
 }
 ```
 
-That's the whole API surface for the common case. `LlmEnvironment` bundles
-the platform-appropriate `ModelRepository` and `LlmEngineFactory` behind one
-class, so `commonMain` code works as-is everywhere — only the constructor
-differs:
-
-```kotlin
-LlmEnvironment()                  // JVM, iOS
-LlmEnvironment(applicationContext) // Android
-```
+That's the whole API surface for the common case. The same five lines run
+identically on JVM, Android, and iOS.
 
 If you want progress callbacks during the download, use the underlying
 repository directly:
@@ -107,27 +101,22 @@ val engine = env.load(source)
 
 ## Integrating into an existing KMP project
 
-After adding the dependency (see [Installation](#installation)), wire
-`LlmEnvironment` into your DI container once per platform. With Koin:
+After adding the dependency (see [Installation](#installation)), do… nothing
+special. Bind `LlmEnvironment.default()` once in `commonMain`:
 
 ```kotlin
-// shared/src/androidMain/.../KoinModule.kt
-actual fun platformModule(): Module = module {
-    single { LlmEnvironment(androidContext()) }
-}
-
-// shared/src/jvmMain/.../KoinModule.kt
-actual fun platformModule(): Module = module {
-    single { LlmEnvironment() }
-}
-
-// shared/src/iosMain/.../KoinModule.kt
-actual fun platformModule(): Module = module {
-    single { LlmEnvironment() }
+// shared/src/commonMain/.../KoinModule.kt
+val llmModule = module {
+    single { LlmEnvironment.default() }
 }
 ```
 
-Then `commonMain` consumes it like any other dependency:
+That's it — no per-platform `actual fun platformModule()` edits, no
+`ModelPathResolver` interface, no platform-specific bindings. On Android the
+Application context is captured automatically via AndroidX Startup; on JVM
+and iOS the call is genuinely zero-arg.
+
+Consume from `commonMain` like any other dependency:
 
 ```kotlin
 // shared/src/commonMain/.../ChatRepository.kt
@@ -140,8 +129,14 @@ class ChatRepository(private val env: LlmEnvironment) {
 }
 ```
 
-You don't need to write your own `ModelPathResolver`, `*ModelCache`, or
-per-platform repository wiring — `LlmEnvironment` is the abstraction.
+If your Android consumer has disabled AndroidX Startup (rare —
+`tools:node="remove"` on the InitializationProvider), fall back to passing
+the context explicitly:
+
+```kotlin
+// shared/src/androidMain/.../KoinModule.kt
+single { LlmEnvironment(androidContext()) }    // overrides the common binding
+```
 
 ## Concepts
 

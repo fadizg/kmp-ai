@@ -13,4 +13,8 @@ actual class LlmEnvironment(
 
     actual suspend fun load(source: ModelSource, config: EngineConfig): LlmEngine =
         factory.load(repository.path(source), config)
+
+    actual companion object {
+        actual fun default(): LlmEnvironment = LlmEnvironment()
+    }
 }

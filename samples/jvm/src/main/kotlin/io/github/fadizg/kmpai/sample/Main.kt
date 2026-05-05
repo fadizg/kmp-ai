@@ -17,7 +17,7 @@ fun main(args: Array<String>) = runBlocking {
         file = "qwen2.5-0.5b-instruct-q4_k_m.gguf",
     )
 
-    val env = LlmEnvironment()
+    val env = LlmEnvironment.default()
 
     print("resolving model... ")
     var lastPercent = -1

@@ -50,6 +50,7 @@ kotlin {
                 kotlin.srcDir("src/jvmAndAndroidMain/kotlin")
                 dependencies {
                     implementation("androidx.annotation:annotation:1.9.1")
+                    api("androidx.startup:startup-runtime:1.2.0")
                 }
             }
         }

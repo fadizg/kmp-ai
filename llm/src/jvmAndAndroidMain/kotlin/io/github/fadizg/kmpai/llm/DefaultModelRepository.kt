@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.last
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -46,7 +47,7 @@ class DefaultModelRepository(
         tmp.delete()
 
         try {
-            val connection = openWithRedirects(urlFor(source))
+            val connection = openWithRedirects(urlFor(source), authFor(source))
             val total = runCatching { connection.contentLengthLong }.getOrDefault(-1L).takeIf { it > 0 }
             val digest = MessageDigest.getInstance("SHA-256")
             var written = 0L
@@ -94,7 +95,7 @@ class DefaultModelRepository(
             is DownloadProgress.Done -> end.path
             is DownloadProgress.Failed -> throw ModelDownloadException(
                 "failed to resolve ${source.id}",
-                end.cause,
+                end.error,
             )
             is DownloadProgress.Running -> error("unreachable: flow ended on Running")
         }
@@ -109,8 +110,8 @@ class DefaultModelRepository(
         }
     }
 
-    override fun list(): List<CachedModel> {
-        if (!cacheDir.isDirectory) return emptyList()
+    override suspend fun list(): List<CachedModel> = withContext(Dispatchers.IO) {
+        if (!cacheDir.isDirectory) return@withContext emptyList()
         val out = mutableListOf<CachedModel>()
         cacheDir.walkTopDown()
             .filter { it.isFile && !it.name.endsWith(".part") }
@@ -121,7 +122,7 @@ class DefaultModelRepository(
                     sizeBytes = it.length(),
                 )
             }
-        return out
+        out
     }
 
     private fun targetFile(source: ModelSource): File = when (source) {
@@ -140,7 +141,20 @@ class DefaultModelRepository(
         is ModelSource.LocalFile -> error("local file has no URL")
     }
 
-    private fun openWithRedirects(initialUrl: String, maxHops: Int = 5): HttpURLConnection {
+    private fun authFor(source: ModelSource): HuggingFaceAuth? = when (source) {
+        is ModelSource.HuggingFace -> source.auth
+        else -> null
+    }
+
+    private fun openWithRedirects(
+        initialUrl: String,
+        auth: HuggingFaceAuth? = null,
+        maxHops: Int = 5,
+    ): HttpURLConnection {
+        val authHeader: String? = when (auth) {
+            is HuggingFaceAuth.Token -> "Bearer ${auth.token}"
+            null -> null
+        }
         var url = initialUrl
         var hops = 0
         while (true) {
@@ -151,6 +165,7 @@ class DefaultModelRepository(
                 instanceFollowRedirects = false
                 setRequestProperty("User-Agent", userAgent)
                 setRequestProperty("Accept", "*/*")
+                if (authHeader != null) setRequestProperty("Authorization", authHeader)
             }
             val code = conn.responseCode
             if (code in 300..399 && code != HttpURLConnection.HTTP_NOT_MODIFIED) {

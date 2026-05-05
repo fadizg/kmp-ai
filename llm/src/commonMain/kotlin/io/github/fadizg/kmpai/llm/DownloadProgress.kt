@@ -7,5 +7,5 @@ sealed interface DownloadProgress {
 
     data class Done(val path: String) : DownloadProgress
 
-    data class Failed(val cause: Throwable) : DownloadProgress
+    data class Failed(val error: Throwable) : DownloadProgress
 }

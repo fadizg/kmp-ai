@@ -32,8 +32,8 @@ fun main(args: Array<String>) = runBlocking {
             }
             is DownloadProgress.Done -> println("\nready: ${progress.path}")
             is DownloadProgress.Failed -> {
-                println("\nfailed: ${progress.cause.message}")
-                throw progress.cause
+                println("\nfailed: ${progress.error.message}")
+                throw progress.error
             }
         }
     }.collect()

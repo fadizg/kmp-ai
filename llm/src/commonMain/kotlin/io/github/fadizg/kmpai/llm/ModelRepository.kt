@@ -9,7 +9,7 @@ interface ModelRepository {
 
     suspend fun remove(source: ModelSource)
 
-    fun list(): List<CachedModel>
+    suspend fun list(): List<CachedModel>
 }
 
 data class CachedModel(

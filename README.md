@@ -315,22 +315,25 @@ per ABI; incremental builds are fast.
 ### iOS prerequisites
 
 - Xcode + macOS host
-- A prebuilt `llama.xcframework` at `$rootDir/.cache/llama.xcframework`,
-  overridable via the `kmp-ai.iosFramework` Gradle property
+- A `llama.xcframework` — auto-downloaded to `$rootDir/.cache/llama.xcframework`
+  on first iOS build (~50 MB from llama.cpp's GitHub release). Override with
+  `-Pkmp-ai.iosFramework=/path/to/your/llama.xcframework` if you want to use
+  a custom build.
 
-To produce the xcframework from upstream llama.cpp:
+```bash
+./gradlew :llm:linkDebugFrameworkIosArm64
+# First run: downloads + unzips the xcframework, then links.
+# Subsequent runs reuse the cached framework.
+```
+
+To produce your own xcframework from source instead of using the released
+one:
 
 ```bash
 git clone https://github.com/ggml-org/llama.cpp
 cd llama.cpp
 cmake --workflow ios-arm64-release
 cp -R build-ios/llama.xcframework /path/to/kmp-ai/.cache/llama.xcframework
-```
-
-Then:
-
-```bash
-./gradlew :llm:linkDebugFrameworkIosArm64
 ```
 
 ## Why a model repository instead of bundled weights?

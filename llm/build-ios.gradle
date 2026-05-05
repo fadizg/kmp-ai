@@ -10,12 +10,10 @@
 //
 // The auto-download uses a llama.cpp release tag (`bXXXX`) that ships an
 // `llama-bXXXX-xcframework.zip` asset. Override the version with:
-//   -Pkmp-ai.llamaCppBuild=b3030
-// or by setting KMP_AI_LLAMA_BUILD in the environment. To find a valid
-// recent build, check
+//   -Pkmp-ai.llamaCppBuild=bXXXX
+// or by setting KMP_AI_LLAMA_BUILD in the environment. See
 //   https://github.com/ggml-org/llama.cpp/releases
-// Older numeric tags may have been pruned; pick a recent one with the
-// xcframework asset attached.
+// for current tags.
 //
 // Written in Groovy for the same reason as build-android.gradle.
 
@@ -67,7 +65,41 @@ tasks.register('downloadLlamaXcframework') {
                 )
             }
         }
-        ant.unzip(src: zipFile.absolutePath, dest: cacheDir.absolutePath, overwrite: true)
+
+        // Recent llama.cpp release zips nest the xcframework under
+        // `build-apple/llama.xcframework/` rather than at the root. Unzip into
+        // a staging dir, then move the xcframework wherever it ended up to the
+        // canonical $rootDir/.cache/llama.xcframework path.
+        def staging = file("${cacheDir}/_staging")
+        delete(staging)
+        staging.mkdirs()
+        ant.unzip(src: zipFile.absolutePath, dest: staging.absolutePath, overwrite: true)
+
+        def candidates = [
+            file("${staging}/build-apple/llama.xcframework"),
+            file("${staging}/llama.xcframework"),
+        ]
+        def found = candidates.find { it.exists() }
+        if (found == null) {
+            // Fallback: search any depth (handles future layout changes).
+            staging.eachFileRecurse { f ->
+                if (found == null && f.isDirectory() && f.name == 'llama.xcframework') {
+                    found = f
+                }
+            }
+        }
+        if (found == null) {
+            throw new GradleException(
+                "downloadLlamaXcframework: could not find llama.xcframework inside ${zipFile}.\n" +
+                "Inspected staging dir contents:\n  " +
+                fileTree(staging).files.collect { it.absolutePath }.take(20).join("\n  "),
+            )
+        }
+
+        delete(autoFramework)
+        ant.move(file: found.absolutePath, tofile: autoFramework.absolutePath)
+        delete(staging)
+
         if (!autoFramework.exists()) {
             throw new GradleException("downloadLlamaXcframework: expected ${autoFramework} after unzip; check ${zipFile}.")
         }
@@ -82,17 +114,13 @@ kotlin {
         target.compilations.named('main').configure {
             cinterops.create('llama') {
                 defFile = file('src/iosMain/cinterop/llama.def')
-                // Don't rely on `modules = llama` / `module.modulemap` — recent
-                // llama.cpp xcframeworks ship without one. Add the framework
-                // Headers directories to the include path explicitly so the
-                // compiler can resolve `#include "llama.h"` and any transitive
-                // ggml.h includes regardless of whether ggml is split into its
-                // own framework. Note: -fmodules is incompatible with the
-                // `headers = …` def-file directive, so it's omitted.
+                // The xcframework ships a Modules/module.modulemap that exports
+                // the `llama` module with all llama.cpp + ggml + gguf headers.
+                // Cinterop's `modules = llama` directive (in llama.def) finds
+                // it via the framework search path provided by -F.
                 compilerOpts(
                     "-F${sliceDir}",
-                    "-I${sliceDir}/llama.framework/Headers",
-                    "-I${sliceDir}/ggml.framework/Headers",
+                    '-fmodules',
                 )
                 extraOpts '-libraryPath', sliceDir
             }

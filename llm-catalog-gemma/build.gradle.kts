@@ -49,7 +49,11 @@ if (androidEnabled) {
 
 mavenPublishing {
     publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL, automaticRelease = true)
-    signAllPublications()
+    val hasSigningKey = listOf("signingInMemoryKey", "signing.keyId").any { providers.gradleProperty(it).isPresent }
+        || System.getenv("ORG_GRADLE_PROJECT_signingInMemoryKey") != null
+    if (hasSigningKey) {
+        signAllPublications()
+    }
     coordinates("io.github.fadizg.kmpai", project.name, version.toString())
     pom {
         name.set("kmp-ai · ${project.name}")

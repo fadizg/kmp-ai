@@ -76,7 +76,14 @@ if (iosEnabled) {
 
 mavenPublishing {
     publishToMavenCentral(com.vanniktech.maven.publish.SonatypeHost.CENTRAL_PORTAL, automaticRelease = true)
-    signAllPublications()
+    // Only enforce signing when a key is actually available. Without this
+    // guard, plain `publishToMavenLocal` (used in local dev and the JVM CI
+    // smoke test) errors with "no configured signatory".
+    val hasSigningKey = listOf("signingInMemoryKey", "signing.keyId").any { providers.gradleProperty(it).isPresent }
+        || System.getenv("ORG_GRADLE_PROJECT_signingInMemoryKey") != null
+    if (hasSigningKey) {
+        signAllPublications()
+    }
     coordinates("io.github.fadizg.kmpai", project.name, version.toString())
     pom {
         name.set("kmp-ai · ${project.name}")

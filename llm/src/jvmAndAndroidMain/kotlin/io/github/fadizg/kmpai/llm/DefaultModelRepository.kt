@@ -110,6 +110,19 @@ class DefaultModelRepository(
         }
     }
 
+    override suspend fun pathIfCached(source: ModelSource): String? = withContext(Dispatchers.IO) {
+        if (source is ModelSource.LocalFile) {
+            return@withContext if (java.io.File(source.path).exists()) source.path else null
+        }
+        val target = targetFile(source)
+        if (target.isFile) target.absolutePath else null
+    }
+
+    override suspend fun isCached(source: ModelSource): Boolean = withContext(Dispatchers.IO) {
+        if (source is ModelSource.LocalFile) java.io.File(source.path).exists()
+        else targetFile(source).isFile
+    }
+
     override suspend fun list(): List<CachedModel> = withContext(Dispatchers.IO) {
         if (!cacheDir.isDirectory) return@withContext emptyList()
         val out = mutableListOf<CachedModel>()

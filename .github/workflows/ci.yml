@@ -82,5 +82,9 @@ jobs:
             ~/.gradle/wrapper
             .cache
           key: ${{ runner.os }}-gradle-ios-${{ hashFiles('**/*.gradle*', 'gradle/libs.versions.toml') }}
-      - name: Link iOS framework (arm64)
-        run: ./gradlew :llm:linkDebugFrameworkIosArm64 -Pkmp-ai.android=false --stacktrace
+      - name: Compile iOS arm64 + cinterop bindings
+        # `:llm` is a KMP library, not a binary framework — no
+        # linkDebugFrameworkIosArm64 task. compileKotlinIosArm64 still
+        # exercises cinterop, the stubbed iOS sources, and produces the
+        # klib that gets published to Maven Central.
+        run: ./gradlew :llm:compileKotlinIosArm64 -Pkmp-ai.android=false --stacktrace

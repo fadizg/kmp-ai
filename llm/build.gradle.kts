@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
+
 // Targets default to ON. Disable an individual target with a Gradle property:
 //   gradle.properties:        kmp-ai.android=false
 //   command line:             -Pkmp-ai.android=false
@@ -35,9 +37,20 @@ kotlin {
     }
 
     if (iosEnabled) {
-        iosArm64()
-        iosSimulatorArm64()
-        iosX64()
+        // Bundle the iOS slices into a single KmpAI.xcframework for Swift
+        // Package Manager distribution. Built by `assembleKmpAIXCFramework`
+        // (debug/release variants exist via `assembleKmpAIDebugXCFramework`
+        // and `assembleKmpAIReleaseXCFramework`). Output:
+        //   llm/build/XCFrameworks/{debug,release}/KmpAI.xcframework
+        // Consumed by Package.swift at the repo root.
+        val xcf = XCFramework("KmpAI")
+        listOf(iosArm64(), iosSimulatorArm64(), iosX64()).forEach { target ->
+            target.binaries.framework {
+                baseName = "KmpAI"
+                isStatic = false
+                xcf.add(this)
+            }
+        }
     }
 
     compilerOptions {

@@ -92,15 +92,105 @@ jobs:
           ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
 
-      - name: Stage llama.xcframework for release asset
-        run: |
-          mkdir -p build/release
-          cd .cache && zip -r "../build/release/llama.xcframework.zip" llama.xcframework
+      # ─── KmpAI.xcframework + Package.swift coordinates ───────────────
+      # Builds KmpAI.xcframework, deterministically zips it alongside the
+      # cached llama.xcframework, computes SHA-256 checksums, patches
+      # Package.swift on main with the version + checksums, and force-
+      # updates the v$VERSION tag so SPM consumers fetching the tag see a
+      # Package.swift whose `binaryTarget` checksums match the .zip files
+      # this workflow is about to upload to the Release.
+      #
+      # Mirrors `scripts/release-spm.sh`. The script is the local-dev /
+      # emergency path; CI is canonical.
+      #
+      # On the tag rewrite: GITHUB_TOKEN-driven pushes do not retrigger
+      # workflows (per GitHub docs), so the force-pushed tag won't loop.
 
-      - name: Upload xcframework to GitHub Release
+      - name: Build KmpAI.xcframework
+        run: |
+          ./gradlew :llm:assembleKmpAIReleaseXCFramework \
+            -Pkmp-ai.android=false \
+            --no-configuration-cache --stacktrace
+
+      - name: Deterministic zip + checksum
+        id: zips
+        run: |
+          set -euo pipefail
+          STAGE=build/spm-release
+          rm -rf "$STAGE" && mkdir -p "$STAGE"
+          KMPAI_XCF=llm/build/XCFrameworks/release/KmpAI.xcframework
+          LLAMA_XCF=.cache/llama.xcframework
+          [ -d "$KMPAI_XCF" ] || { echo "missing $KMPAI_XCF"; exit 1; }
+          [ -d "$LLAMA_XCF" ] || { echo "missing $LLAMA_XCF"; exit 1; }
+
+          deterministic_zip() {
+            local src="$1" out="$2" parent name
+            parent="$(dirname "$src")"; name="$(basename "$src")"
+            rm -f "$out"
+            ( cd "$parent" \
+              && find "$name" -exec touch -t 198001010000.00 {} + \
+              && find "$name" -print | LC_ALL=C sort | zip -X -9 "$out" -@ ) >/dev/null
+          }
+
+          deterministic_zip "$KMPAI_XCF" "$PWD/$STAGE/KmpAI.xcframework.zip"
+          deterministic_zip "$LLAMA_XCF" "$PWD/$STAGE/llama.xcframework.zip"
+
+          KMPAI_SUM=$(swift package compute-checksum "$STAGE/KmpAI.xcframework.zip")
+          LLAMA_SUM=$(swift package compute-checksum "$STAGE/llama.xcframework.zip")
+          echo "kmpai_sum=$KMPAI_SUM" >> "$GITHUB_OUTPUT"
+          echo "llama_sum=$LLAMA_SUM" >> "$GITHUB_OUTPUT"
+          echo "  KmpAI.xcframework.zip checksum: $KMPAI_SUM"
+          echo "  llama.xcframework.zip checksum: $LLAMA_SUM"
+
+      - name: Update Package.swift, commit, force-update tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euxo pipefail
+          VERSION="${{ steps.version.outputs.value }}"
+          KMPAI_SUM="${{ steps.zips.outputs.kmpai_sum }}"
+          LLAMA_SUM="${{ steps.zips.outputs.llama_sum }}"
+          TAG="v$VERSION"
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Move from detached-HEAD (the tag) to main — the tag's commit
+          # is normally main's tip when the user pushed both together.
+          # If main has advanced past the tag, we still ff-only-merge so
+          # the SPM commit lands on top of HEAD without rewriting history.
+          git fetch origin main
+          git checkout main
+          git pull --ff-only origin main
+
+          # Patch Package.swift in place. macOS sed needs `-i.bak`.
+          sed -i.bak \
+            -e "s|^let releaseTag = \".*\"|let releaseTag = \"$VERSION\"|" \
+            -e "s|^let kmpAIChecksum = \".*\"|let kmpAIChecksum = \"$KMPAI_SUM\"|" \
+            -e "s|^let llamaChecksum = \".*\"|let llamaChecksum = \"$LLAMA_SUM\"|" \
+            Package.swift
+          rm Package.swift.bak
+
+          # Sanity-check the substitution actually happened.
+          grep -q "let releaseTag = \"$VERSION\"" Package.swift
+          grep -q "let kmpAIChecksum = \"$KMPAI_SUM\"" Package.swift
+          grep -q "let llamaChecksum = \"$LLAMA_SUM\"" Package.swift
+
+          git add Package.swift
+          git commit -m "SPM: $TAG release coordinates [skip ci]"
+          git push origin main
+
+          # Force-move the tag onto the SPM-coordinates commit so
+          # `swift package` against v$VERSION sees the right checksums.
+          git tag -f "$TAG"
+          git push origin "$TAG" --force
+
+      - name: Create GitHub Release with deterministic zips
         uses: softprops/action-gh-release@v2
         with:
-          files: build/release/llama.xcframework.zip
+          files: |
+            build/spm-release/KmpAI.xcframework.zip
+            build/spm-release/llama.xcframework.zip
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(steps.version.outputs.value, '-') }}

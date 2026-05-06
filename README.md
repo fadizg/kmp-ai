@@ -71,6 +71,39 @@ kotlin {
 Other distribution options (composite build, mavenLocal, GitHub Packages)
 are documented under [Distribution](#distribution).
 
+### Swift Package Manager (iOS, no Gradle)
+
+For iOS-only Swift consumers (no Kotlin/Gradle in the consumer project),
+kmp-ai also publishes a Swift Package per release. Add it to your
+`Package.swift`:
+
+```swift
+.package(url: "https://github.com/fadizg/kmp-ai", exact: "0.3.0")
+
+// then in your target:
+.product(name: "KmpAI", package: "kmp-ai")
+```
+
+Or in Xcode: File → Add Package Dependencies → paste the repo URL.
+
+The package ships two binary `xcframework`s — `KmpAI.xcframework` (the
+Swift bindings) and `llama.xcframework` (the underlying llama.cpp
+runtime). Both are wired through a single `KmpAI` product, so consumers
+declare exactly one dependency. Xcode embeds & signs both automatically.
+
+```swift
+import KmpAI
+
+let env = LlmEnvironmentCompanion.shared.default()
+env.load(source: ModelSourceLocalFile(path: "/path/to/model.gguf"),
+         config: EngineConfigCompanion.shared.default_()) { engine, err in
+    engine?.complete(prompt: "hello",
+                     params: SamplingParamsCompanion.shared.default_()) { reply, err in
+        print(reply ?? "")
+    }
+}
+```
+
 ## Drop-in integration (KMP project, ≤ 10 lines)
 
 For a project that already has Koin (or any DI) wired through a shared module:

@@ -10,7 +10,6 @@ import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URI
-import java.net.URL
 import java.security.MessageDigest
 
 class DefaultModelRepository(
@@ -44,22 +43,58 @@ class DefaultModelRepository(
 
         target.parentFile?.takeIf { !it.exists() }?.mkdirs()
         val tmp = File(target.parentFile, target.name + ".part")
-        tmp.delete()
+        // If a partial download is on disk, try to resume from where it left
+        // off. If the server doesn't honour Range we fall back to a fresh
+        // start (handled below).
+        val resumeFrom = if (tmp.isFile) tmp.length() else 0L
 
         try {
-            val connection = openWithRedirects(urlFor(source), authFor(source))
-            val total = runCatching { connection.contentLengthLong }.getOrDefault(-1L).takeIf { it > 0 }
-            val digest = MessageDigest.getInstance("SHA-256")
-            var written = 0L
+            val connection = openWithRedirects(
+                urlFor(source),
+                authFor(source),
+                rangeStart = resumeFrom,
+            )
+            val resumed = resumeFrom > 0L && connection.responseCode == HttpURLConnection.HTTP_PARTIAL
+            if (resumeFrom > 0L && !resumed) {
+                // Server didn't give us a partial response — discard the
+                // stale `.part` and start over.
+                tmp.delete()
+            }
+
+            // For SHA verification we need a digest over the full file. If we
+            // resumed, prime the digest with bytes already on disk.
+            val digest = if (expectedSha != null) MessageDigest.getInstance("SHA-256") else null
+            if (digest != null && resumed) {
+                tmp.inputStream().use { existing ->
+                    val buf = ByteArray(64 * 1024)
+                    while (true) {
+                        val n = existing.read(buf)
+                        if (n < 0) break
+                        digest.update(buf, 0, n)
+                    }
+                }
+            }
+
+            // contentLengthLong is the size of *this* response body. For a
+            // 206 Partial that's only the remaining bytes — add what's on
+            // disk to get the full size for progress reporting.
+            val responseLen = runCatching { connection.contentLengthLong }.getOrDefault(-1L)
+            val total: Long? = when {
+                responseLen <= 0L -> null
+                resumed -> responseLen + resumeFrom
+                else -> responseLen
+            }
+
+            var written = if (resumed) resumeFrom else 0L
             try {
                 connection.inputStream.use { input ->
-                    tmp.outputStream().use { output ->
+                    java.io.FileOutputStream(tmp, /* append = */ resumed).use { output ->
                         val buffer = ByteArray(64 * 1024)
                         while (true) {
                             val n = input.read(buffer)
                             if (n < 0) break
                             output.write(buffer, 0, n)
-                            digest.update(buffer, 0, n)
+                            digest?.update(buffer, 0, n)
                             written += n
                             emit(DownloadProgress.Running(written, total))
                         }
@@ -69,7 +104,7 @@ class DefaultModelRepository(
                 connection.disconnect()
             }
 
-            if (expectedSha != null) {
+            if (expectedSha != null && digest != null) {
                 val actual = digest.digest().toHex()
                 if (!actual.equals(expectedSha, ignoreCase = true)) {
                     tmp.delete()
@@ -84,7 +119,8 @@ class DefaultModelRepository(
             }
             emit(DownloadProgress.Done(target.absolutePath))
         } catch (t: Throwable) {
-            tmp.delete()
+            // Keep the .part file on transient failure so the next call can
+            // resume. Only nuke it on a verification failure (handled above).
             emit(DownloadProgress.Failed(t))
         }
     }.flowOn(Dispatchers.IO)
@@ -104,6 +140,7 @@ class DefaultModelRepository(
     override suspend fun remove(source: ModelSource) {
         val target = targetFile(source)
         target.delete()
+        File(target.parentFile, target.name + ".part").delete()
         val parent = target.parentFile
         if (parent != null && parent != cacheDir && parent.isDirectory && parent.list().isNullOrEmpty()) {
             parent.delete()
@@ -162,6 +199,7 @@ class DefaultModelRepository(
     private fun openWithRedirects(
         initialUrl: String,
         auth: HuggingFaceAuth? = null,
+        rangeStart: Long = 0L,
         maxHops: Int = 5,
     ): HttpURLConnection {
         val authHeader: String? = when (auth) {
@@ -179,6 +217,7 @@ class DefaultModelRepository(
                 setRequestProperty("User-Agent", userAgent)
                 setRequestProperty("Accept", "*/*")
                 if (authHeader != null) setRequestProperty("Authorization", authHeader)
+                if (rangeStart > 0L) setRequestProperty("Range", "bytes=$rangeStart-")
             }
             val code = conn.responseCode
             if (code in 300..399 && code != HttpURLConnection.HTTP_NOT_MODIFIED) {

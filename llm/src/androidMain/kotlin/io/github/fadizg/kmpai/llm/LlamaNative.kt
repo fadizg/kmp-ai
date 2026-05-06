@@ -32,6 +32,8 @@ internal object LlamaNative {
         repeatPenalty: Float,
         seed: Int,
         stops: Array<String>,
+        grammar: String?,
+        reuseCache: Boolean,
         callback: TokenCallback,
     )
 
@@ -39,8 +41,14 @@ internal object LlamaNative {
     external fun nativeTokenize(handle: Long, text: String): IntArray
 
     @JvmStatic
+    external fun nativeCountTokens(handle: Long, text: String): Int
+
+    @JvmStatic
     external fun nativeEmbed(handle: Long, text: String): FloatArray
 
     @JvmStatic
     external fun nativeContextSize(handle: Long): Int
+
+    @JvmStatic
+    external fun nativeResetCache(handle: Long)
 }

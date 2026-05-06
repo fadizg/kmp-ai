@@ -28,6 +28,7 @@ import platform.Foundation.NSURLSessionDownloadTask
 import platform.Foundation.NSURLSessionTask
 import platform.Foundation.addValue
 import platform.Foundation.dataWithContentsOfFile
+import platform.Foundation.writeToFile
 import platform.darwin.NSObject
 
 @OptIn(ExperimentalForeignApi::class)
@@ -54,6 +55,13 @@ class IosModelRepository(
         return callbackFlow {
             val parentUrl = targetUrl.URLByDeletingLastPathComponent
             if (parentUrl != null) ensureDir(parentUrl)
+
+            // If a previous attempt was cancelled, NSURLSession may have
+            // saved a `resumeData` blob alongside the target file. When
+            // present, use it to resume from where we left off; otherwise
+            // start fresh.
+            val resumeDataPath = "$targetPath.resume"
+            val resumeData = NSData.dataWithContentsOfFile(resumeDataPath)
 
             val delegate = DownloadDelegate(
                 onProgress = { written, total ->
@@ -83,6 +91,9 @@ class IosModelRepository(
                                     return@DownloadDelegate
                                 }
                             }
+                            // Successful download — we no longer need any
+                            // saved resumeData.
+                            NSFileManager.defaultManager.removeItemAtPath(resumeDataPath, null)
                             NSFileManager.defaultManager.removeItemAtPath(targetPath, null)
                             val moved = NSFileManager.defaultManager.moveItemAtPath(
                                 srcPath = tempPath, toPath = targetPath, error = null,
@@ -97,25 +108,35 @@ class IosModelRepository(
                 },
             )
 
-            val nsUrl = NSURL.URLWithString(sourceUrlString)
-                ?: throw ModelDownloadException("invalid url: $sourceUrlString")
-            val request = NSMutableURLRequest.requestWithURL(nsUrl)
-            (source as? ModelSource.HuggingFace)?.auth?.let { auth ->
-                when (auth) {
-                    is HuggingFaceAuth.Token ->
-                        request.addValue("Bearer ${auth.token}", forHTTPHeaderField = "Authorization")
-                }
-            }
             val session = NSURLSession.sessionWithConfiguration(
                 NSURLSessionConfiguration.ephemeralSessionConfiguration,
                 delegate,
                 delegateQueue = null,
             )
-            val task = session.downloadTaskWithRequest(request)
+            val task: NSURLSessionDownloadTask = if (resumeData != null) {
+                session.downloadTaskWithResumeData(resumeData)
+            } else {
+                val nsUrl = NSURL.URLWithString(sourceUrlString)
+                    ?: throw ModelDownloadException("invalid url: $sourceUrlString")
+                val request = NSMutableURLRequest.requestWithURL(nsUrl)
+                (source as? ModelSource.HuggingFace)?.auth?.let { auth ->
+                    when (auth) {
+                        is HuggingFaceAuth.Token ->
+                            request.addValue("Bearer ${auth.token}", forHTTPHeaderField = "Authorization")
+                    }
+                }
+                session.downloadTaskWithRequest(request)
+            }
             task.resume()
 
             awaitClose {
-                task.cancel()
+                // On cancel, ask NSURLSession for resumeData so the next
+                // call can pick up where we left off.
+                task.cancelByProducingResumeData { data ->
+                    if (data != null) {
+                        data.writeToFile(resumeDataPath, atomically = true)
+                    }
+                }
                 session.invalidateAndCancel()
             }
         }.flowOn(Dispatchers.Default)
@@ -135,6 +156,7 @@ class IosModelRepository(
     override suspend fun remove(source: ModelSource) {
         val target = targetUrl(source).path ?: return
         NSFileManager.defaultManager.removeItemAtPath(target, null)
+        NSFileManager.defaultManager.removeItemAtPath("$target.resume", null)
     }
 
     override suspend fun pathIfCached(source: ModelSource): String? = withContext(Dispatchers.Default) {
@@ -155,7 +177,7 @@ class IosModelRepository(
         val enumerator = mgr.enumeratorAtPath(basePath) ?: return@withContext emptyList()
         while (true) {
             val rel = enumerator.nextObject() as? String ?: break
-            if (rel.endsWith(".part")) continue
+            if (rel.endsWith(".part") || rel.endsWith(".resume")) continue
             val full = "$basePath/$rel"
             val attrs = mgr.attributesOfItemAtPath(full, null) ?: continue
             val isDir = (attrs["NSFileType"] as? String) == "NSFileTypeDirectory"

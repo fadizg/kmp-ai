@@ -18,10 +18,17 @@ package io.github.fadizg.kmpai.llm
  * AndroidX Startup, fall back to `LlmEnvironment(context)`.
  *
  * Pass your own [ModelRepository] / [LlmEngineFactory] to override the defaults.
+ *
+ * Set [defaultSampling] (via [withDefaults]) to apply a baseline
+ * [SamplingParams] — most usefully a default [Grammar] — to every chat
+ * session created via [chat]. Per-call params still win.
  */
 expect class LlmEnvironment {
     val repository: ModelRepository
     val factory: LlmEngineFactory
+
+    /** Baseline sampling applied to every [chat] session. Per-call params override. */
+    val defaultSampling: SamplingParams
 
     /**
      * Resolve [source] (downloading + caching if needed) and load the
@@ -33,8 +40,28 @@ expect class LlmEnvironment {
         config: EngineConfig = EngineConfig(),
     ): LlmEngine
 
+    /** Returns a copy of this environment with the supplied [SamplingParams] as the new baseline. */
+    fun withDefaults(defaults: SamplingParams): LlmEnvironment
+
     companion object {
         /** Platform-default environment. Zero-arg on every platform. */
         fun default(): LlmEnvironment
     }
 }
+
+/**
+ * Resolve [source], load it, and wrap the engine in a [ChatSession] that
+ * inherits this environment's [LlmEnvironment.defaultSampling]. The
+ * [systemPrompt] (if any) is added to the session.
+ */
+suspend fun LlmEnvironment.chat(
+    source: ModelSource,
+    template: ChatTemplate = ChatTemplate.ChatML,
+    systemPrompt: String? = null,
+    config: EngineConfig = EngineConfig(),
+): ChatSession = ChatSession(
+    engine = load(source, config),
+    template = template,
+    systemPrompt = systemPrompt,
+    defaults = defaultSampling,
+)

@@ -45,6 +45,7 @@ import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.readValue
 import kotlinx.cinterop.reinterpret
+import kotlinx.cinterop.set
 import kotlinx.cinterop.useContents
 import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.value

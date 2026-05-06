@@ -11,5 +11,12 @@ interface LlmEngine : AutoCloseable {
 
     fun tokenize(text: String): IntArray
 
+    /**
+     * Number of tokens [text] would consume — useful for staying under
+     * [ModelInfo.contextSize] before sending a prompt. Default delegates
+     * to [tokenize]; engines may override with a cheaper path.
+     */
+    fun countTokens(text: String): Int = tokenize(text).size
+
     fun embed(text: String): FloatArray
 }

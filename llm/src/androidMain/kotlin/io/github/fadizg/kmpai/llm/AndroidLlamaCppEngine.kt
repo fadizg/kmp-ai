@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal class AndroidLlamaCppEngine private constructor(
     private val handle: Long,
     override val info: ModelInfo,
-) : LlmEngine {
+) : LlmEngine, KvCacheControl {
 
     private val closed = AtomicBoolean(false)
 
@@ -37,6 +37,8 @@ internal class AndroidLlamaCppEngine private constructor(
                     repeatPenalty = params.repeatPenalty,
                     seed = params.seed ?: -1,
                     stops = params.stop.toTypedArray(),
+                    grammar = params.grammar?.gbnf,
+                    reuseCache = true,
                     callback = callback,
                 )
                 close()
@@ -67,6 +69,8 @@ internal class AndroidLlamaCppEngine private constructor(
                     repeatPenalty = params.repeatPenalty,
                     seed = params.seed ?: -1,
                     stops = params.stop.toTypedArray(),
+                    grammar = params.grammar?.gbnf,
+                    reuseCache = true,
                     callback = callback,
                 )
             } catch (t: Throwable) {
@@ -80,9 +84,19 @@ internal class AndroidLlamaCppEngine private constructor(
         return LlamaNative.nativeTokenize(handle, text)
     }
 
+    override fun countTokens(text: String): Int {
+        ensureOpen()
+        return LlamaNative.nativeCountTokens(handle, text)
+    }
+
     override fun embed(text: String): FloatArray {
         ensureOpen()
         return LlamaNative.nativeEmbed(handle, text)
+    }
+
+    override fun resetKvCache() {
+        ensureOpen()
+        LlamaNative.nativeResetCache(handle)
     }
 
     override fun close() {

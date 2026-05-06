@@ -48,8 +48,10 @@ internal class LlamaCppEngine private constructor(
             .setTopP(topP)
             .setRepeatPenalty(repeatPenalty)
             .setNPredict(maxTokens)
+            .setCachePrompt(true) // reuse KV-cache prefix across calls on the same engine
         if (stop.isNotEmpty()) ip.setStopStrings(*stop.toTypedArray())
         seed?.let { ip.setSeed(it) }
+        grammar?.let { ip.setGrammar(it.gbnf) }
         return ip
     }
 

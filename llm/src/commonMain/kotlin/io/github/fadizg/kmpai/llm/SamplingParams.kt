@@ -8,6 +8,11 @@ data class SamplingParams(
     val repeatPenalty: Float = 1.1f,
     val seed: Int? = null,
     val stop: List<String> = emptyList(),
+    /**
+     * Constrains output to text matching a GBNF grammar. `null` means free
+     * generation. See [Grammar] for helpers (choice, regex, json, raw).
+     */
+    val grammar: Grammar? = null,
 ) {
     companion object {
         /** Low-temperature, focused output. Good for factual Q&A, summarisation, code. */
@@ -28,3 +33,16 @@ data class SamplingParams(
         )
     }
 }
+
+/**
+ * Layer [override] on top of [base]: any non-default field in [override]
+ * wins, otherwise [base] is kept. Used to thread environment-level and
+ * session-level defaults through to per-call params.
+ *
+ * Implementation: only `grammar` is currently overlaid (it's the only
+ * field with a clear "unset" sentinel, `null`). Other fields use
+ * [override]'s value verbatim — call sites that want to inherit from
+ * [base] should pass [base]'s field explicitly.
+ */
+internal fun SamplingParams.withGrammarFallback(base: SamplingParams?): SamplingParams =
+    if (grammar != null || base?.grammar == null) this else copy(grammar = base.grammar)

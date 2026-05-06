@@ -376,9 +376,12 @@ entry points wire in the right `ModelRepository`.
 # Android (needs ANDROID_HOME + NDK 27 to build kmp-ai's native code)
 ./gradlew :samples:app:installDebug
 
-# iOS framework (composite-build path; needs llama.xcframework)
-./gradlew :samples:app:linkDebugFrameworkIosArm64
-# then embed ComposeApp.framework in an Xcode project, present MainViewController()
+# iOS — open the bundled Xcode shell, hit Run on a simulator
+cd samples/app/iosApp
+./setup.sh                         # generates iosApp.xcodeproj via xcodegen
+open iosApp.xcodeproj
+# Build phase auto-runs ./gradlew :samples:app:embedAndSignAppleFrameworkForXcode
+# and embeds llama.xcframework. See samples/app/iosApp/README.md.
 ```
 
 ## Building from source

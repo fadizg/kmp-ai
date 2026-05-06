@@ -1,0 +1,73 @@
+name: iosApp
+options:
+  bundleIdPrefix: io.github.fadizg.kmpai.sample.app
+  deploymentTarget:
+    iOS: "14.0"
+
+# Single iOS app target. Sources are pure SwiftUI; the actual chat UI is
+# hosted from `MainViewController()` in the Compose framework
+# (samples/app/src/iosMain/.../MainViewController.kt).
+#
+# Build flow:
+#   1. Pre-build script invokes `embedAndSignAppleFrameworkForXcode`,
+#      which (re)builds ComposeApp.framework for the SDK + arch Xcode is
+#      driving, and embeds it in the app bundle's Frameworks/ folder.
+#   2. Xcode links against ComposeApp via OTHER_LDFLAGS (search path
+#      below resolves to the gradle output dir).
+#   3. llama.xcframework is added directly as a linked + embedded
+#      framework — its dylibs ship inside the .app bundle. Xcode picks
+#      the right slice from the xcframework based on SDK.
+#
+# Re-run ./setup.sh whenever this file changes.
+targets:
+  iosApp:
+    type: application
+    platform: iOS
+    sources:
+      - path: iosApp
+        excludes:
+          - "Info.plist"
+    info:
+      path: iosApp/Info.plist
+      properties:
+        CFBundleDisplayName: "kmp-ai"
+        UILaunchScreen:
+          UIColorName: ""
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIRequiredDeviceCapabilities:
+          - arm64
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.fadizg.kmpai.sample.app.iosApp
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.9"
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        ENABLE_BITCODE: NO
+        # Where Xcode finds ComposeApp.framework (gradle output) and
+        # llama.xcframework (auto-downloaded by the iOS build to .cache).
+        # Both are repo-relative — SRCROOT is samples/app/iosApp/.
+        FRAMEWORK_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/../build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)
+          - $(SRCROOT)/../../../.cache
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -framework
+          - ComposeApp
+    preBuildScripts:
+      - name: "Build ComposeApp.framework via Gradle"
+        # `basedOnDependencyAnalysis: false` makes Xcode always run the
+        # script — Gradle's own up-to-date check decides whether to do
+        # actual work. Without this Xcode caches the script as a no-op.
+        basedOnDependencyAnalysis: false
+        script: |
+          cd "$SRCROOT/../../.."
+          ./gradlew :samples:app:embedAndSignAppleFrameworkForXcode \
+            -Pkmp-ai.android=false
+    dependencies:
+      - framework: $(SRCROOT)/../../../.cache/llama.xcframework
+        embed: true
+        codeSign: true

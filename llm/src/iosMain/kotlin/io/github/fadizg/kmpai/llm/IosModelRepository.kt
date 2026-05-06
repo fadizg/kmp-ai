@@ -137,6 +137,17 @@ class IosModelRepository(
         NSFileManager.defaultManager.removeItemAtPath(target, null)
     }
 
+    override suspend fun pathIfCached(source: ModelSource): String? = withContext(Dispatchers.Default) {
+        if (source is ModelSource.LocalFile) {
+            return@withContext if (NSFileManager.defaultManager.fileExistsAtPath(source.path)) source.path else null
+        }
+        val target = targetUrl(source).path ?: return@withContext null
+        if (NSFileManager.defaultManager.fileExistsAtPath(target)) target else null
+    }
+
+    override suspend fun isCached(source: ModelSource): Boolean =
+        pathIfCached(source) != null
+
     override suspend fun list(): List<CachedModel> = withContext(Dispatchers.Default) {
         val basePath = cacheDirUrl.path ?: return@withContext emptyList()
         val mgr = NSFileManager.defaultManager

@@ -18,5 +18,6 @@ dependencyResolutionManagement {
 include(":llm")
 include(":llm-catalog-qwen")
 include(":llm-catalog-gemma")
+include(":llm-catalog-deepseek")
 include(":samples:jvm")
 include(":samples:app")

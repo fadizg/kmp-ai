@@ -1,0 +1,19 @@
+apply plugin: 'com.android.library'
+
+kotlin {
+    androidTarget {
+        publishLibraryVariants 'release'
+    }
+}
+
+android {
+    namespace 'io.github.fadizg.kmpai.catalog.deepseek'
+    compileSdk 35
+    defaultConfig {
+        minSdk 26
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+}

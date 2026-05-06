@@ -8,36 +8,32 @@ backed by [llama.cpp](https://github.com/ggml-org/llama.cpp).
 - Chat templates: ChatML, Llama 3, Gemma, Custom
 - Curated model catalogs (Qwen 2.5, Gemma 2/3)
 - KMP Compose Multiplatform sample app (Desktop + Android + iOS)
+- **Maven Central** distribution — Android AARs ship prebuilt `.so` files; consumers don't need NDK locally.
 
 ## Compatibility matrix
 
 | Tool                     | Required version       |
 | ------------------------ | ---------------------- |
-| Kotlin                   | 2.0.21 +               |
+| Kotlin                   | 2.2.0 +                |
 | Gradle                   | 8.7 +                  |
 | AGP (Android)            | 8.7 +                  |
-| Compose Multiplatform    | 1.7.3 +                |
+| Compose Multiplatform    | 1.9.0 +                |
 | JDK                      | 21 (toolchain)         |
-| Android SDK / NDK        | API 26 + · NDK 27      |
+| Android SDK / NDK        | API 26 + (NDK only needed if you build kmp-ai itself, not for consuming the AAR) |
 | Xcode (iOS)              | 16 +                   |
 | iOS deployment target    | 14.0 +                 |
 
 ## Status
 
-| Target          | Status                                                                          |
-| --------------- | ------------------------------------------------------------------------------- |
-| JVM (Desktop)   | Works out of the box — `de.kherud:llama` ships natives for Mac/Linux/Win.       |
-| Android         | Needs NDK 27 to build llama.cpp at consumer build time *unless* consumed via Maven Central (where prebuilt `.so` files ship in the AAR — TODO, currently shipped via JitPack rebuild). |
-| iOS             | macOS-only build. `llama.xcframework` auto-downloads on first build via the `downloadLlamaXcframework` Gradle task. |
-
-> ⚠️ **JitPack publishes Android + JVM only** — JitPack runs on Linux, so the
-> iOS Kotlin Multiplatform variants aren't in the JitPack-published artifact.
-> For iOS consumers, use a composite build (`includeBuild("../kmp-ai")`) or
-> wait for the Maven Central pipeline (in progress — see the roadmap).
+| Target          | Status                                                                                   |
+| --------------- | ---------------------------------------------------------------------------------------- |
+| **JVM (Desktop)**   | ✅ Stable. `de.kherud:llama` ships natives for Mac/Linux/Win.                          |
+| **Android**         | ✅ Stable. Maven Central AAR includes prebuilt `libllama.so`/`libggml*.so`/`libkmpai_llama.so` for `arm64-v8a` + `x86_64`. Consumers don't need NDK. |
+| **iOS**             | ⚠️ Engine pending rewrite for Kotlin 2.2.x cinterop bindings. The Maven Central iOS klib compiles but `LlmEnvironment.default().load(...)` throws at runtime. **For iOS today: use composite build** (`includeBuild("../kmp-ai")`), which still works against the older bindings. |
 
 ## Installation
 
-The fastest path while the library is in 0.x is **JitPack**.
+The recommended path is **Maven Central** (live as of v0.2.x).
 
 In the **consumer** project's `settings.gradle.kts`:
 
@@ -46,7 +42,6 @@ dependencyResolutionManagement {
     repositories {
         mavenCentral()
         google()
-        maven { url = uri("https://jitpack.io") }
     }
 }
 ```
@@ -56,37 +51,38 @@ In the consumer module:
 ```kotlin
 // Plain JVM / Android Gradle module:
 dependencies {
-    implementation("com.github.fadizg.kmp-ai:llm:v0.1.4")
-    implementation("com.github.fadizg.kmp-ai:llm-catalog-qwen:v0.1.4")
+    implementation("io.github.fadizg.kmpai:llm:0.2.8")
+    implementation("io.github.fadizg.kmpai:llm-catalog-qwen:0.2.8")
 }
 
 // KMP module:
 kotlin {
     sourceSets.commonMain.dependencies {
-        implementation("com.github.fadizg.kmp-ai:llm:v0.1.4")
-        implementation("com.github.fadizg.kmp-ai:llm-catalog-qwen:v0.1.4")
+        implementation("io.github.fadizg.kmpai:llm:0.2.8")
+        implementation("io.github.fadizg.kmpai:llm-catalog-qwen:0.2.8")
     }
 }
 ```
 
-> JitPack rewrites the groupId for multi-module repos. Coordinate is
-> `com.github.<owner>.<repo>:<module>:<git-tag>`, **not** the
-> `io.github.fadizg.kmpai` groupId from the POM. Use lowercase tag names
-> (`v0.1.4`, not `V0.1.4`) — JitPack's URL is case-sensitive.
+> Maven Central uses the real `io.github.fadizg.kmpai` groupId. Don't confuse
+> with the older JitPack-rewritten `com.github.fadizg.kmp-ai:*` coordinates;
+> JitPack publishing was retired with the move to Maven Central.
 
-Other distribution options are documented under [Distribution](#distribution).
+Other distribution options (composite build, mavenLocal, GitHub Packages)
+are documented under [Distribution](#distribution).
 
 ## Drop-in integration (KMP project, ≤ 10 lines)
 
 For a project that already has Koin (or any DI) wired through a shared module:
 
-```kotlin
-// gradle/libs.versions.toml
+```toml
+# gradle/libs.versions.toml
 [versions]
-kmp-ai = "v0.1.4"
+kmp-ai = "0.2.8"
+
 [libraries]
-kmp-ai-llm           = { module = "com.github.fadizg.kmp-ai:llm",                version.ref = "kmp-ai" }
-kmp-ai-catalog-qwen  = { module = "com.github.fadizg.kmp-ai:llm-catalog-qwen",   version.ref = "kmp-ai" }
+kmp-ai-llm           = { module = "io.github.fadizg.kmpai:llm",                version.ref = "kmp-ai" }
+kmp-ai-catalog-qwen  = { module = "io.github.fadizg.kmpai:llm-catalog-qwen",   version.ref = "kmp-ai" }
 ```
 
 ```kotlin
@@ -104,7 +100,9 @@ val llmModule = module {
 }
 ```
 
-Done. `commonMain` calls `get<LlmEnvironment>().load(Qwen.Qwen2_5_0_5B_Q4)` and gets a real engine on every platform, no per-platform DI bindings, no `Context` plumbing.
+Done. `commonMain` calls `get<LlmEnvironment>().load(Qwen.Qwen2_5_0_5B_Q4)` and
+gets a real engine on JVM and Android, no per-platform DI bindings, no `Context`
+plumbing. (iOS via composite build until the engine rewrite ships.)
 
 ## Quick start
 
@@ -131,8 +129,8 @@ suspend fun main() {
 }
 ```
 
-That's the whole API surface for the common case. The same five lines run
-identically on JVM, Android, and iOS.
+That's the whole API surface for the common case. The same five lines run on
+JVM and Android off the shelf; iOS works the same shape via composite build.
 
 If you want progress callbacks during the download, use the underlying
 repository directly:
@@ -142,7 +140,7 @@ env.repository.resolve(source).collect { progress ->
     when (progress) {
         is DownloadProgress.Running -> println("${progress.bytes / 1_000_000} MB")
         is DownloadProgress.Done    -> println("ready")
-        is DownloadProgress.Failed  -> throw progress.cause
+        is DownloadProgress.Failed  -> throw progress.error
     }
 }
 val engine = env.load(source)
@@ -163,7 +161,7 @@ val llmModule = module {
 That's it — no per-platform `actual fun platformModule()` edits, no
 `ModelPathResolver` interface, no platform-specific bindings. On Android the
 Application context is captured automatically via AndroidX Startup; on JVM
-and iOS the call is genuinely zero-arg.
+the call is genuinely zero-arg.
 
 Consume from `commonMain` like any other dependency:
 
@@ -212,6 +210,7 @@ interface LlmEngine : AutoCloseable {
 ModelSource.HuggingFace(
     repo = "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
     file = "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+    auth = HuggingFaceAuth.Token("hf_...")  // optional, for gated repos
 )
 ModelSource.Url("https://example.com/model.gguf", sha256 = "...")
 ModelSource.LocalFile("/abs/path/to/model.gguf")
@@ -221,18 +220,31 @@ ModelSource.LocalFile("/abs/path/to/model.gguf")
 as needed. Two implementations:
 
 - `DefaultModelRepository(File)` — JVM and Android (uses `HttpURLConnection`)
-- `IosModelRepository(NSURL)` — iOS (uses `NSURLSessionDownloadTask`)
+- `IosModelRepository(NSURL)` — iOS (currently a stub; see Status)
 
 Both expose:
 
 ```kotlin
-fun resolve(source: ModelSource): Flow<DownloadProgress> // streaming
-suspend fun path(source: ModelSource): String           // blocks until done
+fun resolve(source: ModelSource): Flow<DownloadProgress>
+suspend fun path(source: ModelSource): String
 suspend fun remove(source: ModelSource)
-fun list(): List<CachedModel>
+suspend fun list(): List<CachedModel>
 ```
 
-`DownloadProgress` is a sealed type — `Running(bytes, total)`, `Done(path)`, `Failed(cause)`.
+`DownloadProgress` is a sealed type — `Running(bytes, total)`, `Done(path)`, `Failed(error)`.
+
+### Capability check (experimental)
+
+Before constructing an engine, you can check whether the device can actually
+run kmp-ai:
+
+```kotlin
+@OptIn(ExperimentalKmpAiApi::class)
+when (val cap = LlmEnvironment.capability()) {
+    is DeviceCapability.Available    -> showAiFeature(cap.backends)
+    is DeviceCapability.Unsupported  -> hideAiFeature(cap.reason)
+}
+```
 
 ### `ChatSession` and `ChatTemplate`
 
@@ -249,19 +261,34 @@ chat.reset()    // clear, keep system prompt
 Built-in templates: `ChatML` (Qwen, many open models), `Llama3`, `Gemma`. For
 anything else, use `ChatTemplate.Custom(formatter, stops)`.
 
-### `SamplingParams`
+### `EngineConfig` and `SamplingParams` presets
 
 ```kotlin
-SamplingParams(
-    maxTokens = 256,
-    temperature = 0.7f,
-    topP = 0.9f,
-    topK = 40,
-    repeatPenalty = 1.1f,
-    seed = null,            // null = random
-    stop = listOf("</end>"),
-)
+EngineConfig.lowMemory()      // contextSize=512  · for low-RAM Androids
+EngineConfig.balanced()       // contextSize=2048 · default for most devices
+EngineConfig.highCapacity()   // contextSize=4096 · flagships / desktops
+
+SamplingParams.Conservative   // temp=0.2 · factual / Q&A / code
+SamplingParams.Balanced       // temp=0.7 · default chat
+SamplingParams.Creative       // temp=0.9 · brainstorming / writing
 ```
+
+### `DownloadConstraints` (experimental)
+
+Gate large model downloads on device conditions:
+
+```kotlin
+@OptIn(ExperimentalKmpAiApi::class)
+env.repository.resolve(
+    Qwen.Qwen2_5_3B_Q4,
+    constraints = DownloadConstraints.Recommended,  // wifiOnly + requiresCharging
+).collect { ... }
+```
+
+Android uses `ConnectivityManager` + `BatteryManager`; iOS gates charging via
+`UIDevice` (wifiOnly is no-op on iOS — set
+`NSURLSessionConfiguration.allowsCellularAccess = false` if you need a hard
+guarantee). JVM is no-op.
 
 ### Catalogs
 
@@ -313,10 +340,10 @@ entry points wire in the right `ModelRepository`.
 # Desktop (no extra setup)
 ./gradlew :samples:app:run
 
-# Android (needs ANDROID_HOME + NDK 27)
+# Android (needs ANDROID_HOME + NDK 27 to build kmp-ai's native code)
 ./gradlew :samples:app:installDebug
 
-# iOS (needs llama.xcframework — see "Building from source" below)
+# iOS framework (composite-build path; needs llama.xcframework)
 ./gradlew :samples:app:linkDebugFrameworkIosArm64
 # then embed ComposeApp.framework in an Xcode project, present MainViewController()
 ```
@@ -347,10 +374,10 @@ kmp-ai.ios=false
 
 `KMP_AI_ANDROID` / `KMP_AI_IOS` env vars still work as a fallback for CI.
 
-### Android prerequisites
+### Android prerequisites (only needed to build kmp-ai itself)
 
 - Android SDK (`ANDROID_HOME` set, or `local.properties` with `sdk.dir`)
-- NDK 27.0.12077973 (the CMake config requires this exact version)
+- NDK 27.0.12077973 (the CMake config auto-installs it)
 - ~3 GB free for the llama.cpp build artifacts
 
 ```bash
@@ -359,18 +386,22 @@ kmp-ai.ios=false
 ```
 
 First Android build is slow (~5 min) because llama.cpp is compiled from source
-per ABI; incremental builds are fast.
+per ABI; incremental builds are fast. **Consumers of the published Maven
+Central AAR don't need any of this** — the prebuilt `.so` files are inside the
+artifact.
 
 ### iOS prerequisites
 
-- Xcode + macOS host
+- Xcode 16 + macOS host
 - A `llama.xcframework` — auto-downloaded to `$rootDir/.cache/llama.xcframework`
   on first iOS build (~50 MB from llama.cpp's GitHub release). Override with
   `-Pkmp-ai.iosFramework=/path/to/your/llama.xcframework` if you want to use
   a custom build.
+- Pin `kmp-ai.llamaCppBuild=bXXXX` in `gradle.properties` to a specific
+  llama.cpp release tag (default: `b9033`).
 
 ```bash
-./gradlew :llm:linkDebugFrameworkIosArm64
+./gradlew :samples:app:linkDebugFrameworkIosArm64
 # First run: downloads + unzips the xcframework, then links.
 # Subsequent runs reuse the cached framework.
 ```
@@ -402,21 +433,25 @@ Android Play Asset Delivery / iOS On-Demand Resources and pass the path to
 
 ## Distribution
 
-This library can be consumed five ways. Pick one based on your needs.
+This library can be consumed four ways. Pick one based on your needs.
 
-### 1. JitPack (recommended for public)
+### 1. Maven Central (recommended)
 
-Documented above. Consumer just adds the JitPack repo and uses
-`com.github.fadizg.kmp-ai:<module>:<tag>` coordinates.
+Documented above. Released from a macOS GitHub Actions runner via
+`vanniktech/gradle-maven-publish-plugin`, signed with GPG, indexed by
+Sonatype. No PAT or credentials needed by the consumer.
 
-JitPack only builds the JVM variant by default. To extend to Android, edit
-`jitpack.yml` to install NDK 27 and set `KMP_AI_ANDROID=true`. iOS is
-unsupported on JitPack since their build environment is Linux.
+```kotlin
+implementation("io.github.fadizg.kmpai:llm:0.2.8")
+```
+
+iOS klib ships in the published artifact but currently throws at runtime
+(see Status). Use composite build for iOS today.
 
 ### 2. Composite build (no publish needed)
 
-Best for actively developing kmp-ai alongside a consumer project. In the
-consumer's `settings.gradle.kts`:
+Best for actively developing kmp-ai alongside a consumer project, or for
+iOS until the engine rewrite ships. In the consumer's `settings.gradle.kts`:
 
 ```kotlin
 includeBuild("../kmp-ai")
@@ -436,10 +471,10 @@ All targets work, source changes are picked up immediately.
 
 ```bash
 # in kmp-ai (all targets on by default — needs Android SDK + iOS xcframework)
-./gradlew publishToMavenLocal -Pkmp-ai.version=0.1.0
+./gradlew publishToMavenLocal -Pkmp-ai.version=0.2.8
 
 # JVM-only publish on a machine without those toolchains:
-./gradlew publishToMavenLocal -Pkmp-ai.version=0.1.0 -Pkmp-ai.android=false -Pkmp-ai.ios=false
+./gradlew publishToMavenLocal -Pkmp-ai.version=0.2.8 -Pkmp-ai.android=false -Pkmp-ai.ios=false
 ```
 
 ```kotlin
@@ -449,44 +484,19 @@ dependencyResolutionManagement {
 }
 
 // consumer build.gradle.kts
-dependencies { implementation("io.github.fadizg.kmpai:llm:0.1.0") }
+dependencies { implementation("io.github.fadizg.kmpai:llm:0.2.8") }
 ```
 
-### 4. GitHub Packages
+### 4. GitHub Packages (legacy — Maven Central is preferred)
 
 Requires a classic PAT with `read:packages` + `write:packages` (and `repo`):
 
 ```bash
-GITHUB_USER=fadizg GITHUB_TOKEN=ghp_xxx ./gradlew publish -Pkmp-ai.version=0.1.0
+GITHUB_USER=fadizg GITHUB_TOKEN=ghp_xxx ./gradlew publish -Pkmp-ai.version=0.2.8
 ```
 
 Consumer needs the same PAT to read — GitHub Packages requires auth even for
 public packages.
-
-```kotlin
-// consumer settings.gradle.kts
-dependencyResolutionManagement {
-    repositories {
-        mavenCentral()
-        google()
-        maven {
-            url = uri("https://maven.pkg.github.com/fadizg/kmp-ai")
-            credentials {
-                username = providers.gradleProperty("gpr.user").orNull
-                    ?: System.getenv("GITHUB_USER")
-                password = providers.gradleProperty("gpr.token").orNull
-                    ?: System.getenv("GITHUB_TOKEN")
-            }
-        }
-    }
-}
-```
-
-### 5. Maven Central (not yet wired)
-
-The conventional choice for OSS libraries. Requires a Sonatype OSSRH account,
-GPG signing, and the `io.github.gradle-nexus.publish-plugin`. Not configured
-in this repo yet.
 
 ## Project layout
 
@@ -497,42 +507,45 @@ kmp-ai/
 │   ├── src/jvmAndAndroidMain/    DefaultModelRepository (HttpURLConnection)
 │   ├── src/jvmMain/              LlamaCppEngine (de.kherud:llama)
 │   ├── src/androidMain/          AndroidLlamaCppEngine + JNI bridge + cpp/
-│   └── src/iosMain/              IosLlamaCppEngine + cinterop bindings
+│   └── src/iosMain/              IosLlamaCppEngine (stub) + cinterop bindings
 ├── llm-catalog-qwen/             curated Qwen ModelSource constants
 ├── llm-catalog-gemma/            curated Gemma ModelSource constants
 ├── samples/
 │   ├── jvm/                      headless CLI
 │   └── app/                      Compose MP chat UI (Desktop + Android + iOS)
-├── gradle/
-│   └── publishing.gradle.kts     shared maven-publish config
-└── jitpack.yml                   JitPack build instructions
+├── scripts/
+│   └── setup-release.sh          one-shot GPG + GitHub Secrets bootstrap
+├── .github/workflows/
+│   ├── ci.yml                    JVM / Android (.so verify) / iOS smoke tests
+│   └── release.yml               tag → Maven Central + GitHub Release asset
+└── jitpack.yml                   legacy JitPack config (Maven Central preferred)
 ```
 
 ## Caveats
 
+- **iOS engine is stubbed.** The Maven Central iOS klib compiles and the API
+  surface matches JVM/Android, but the actual engine throws at runtime. The
+  cinterop bindings need a rewrite to match Kotlin 2.2.x's Objective-C-mode
+  output for `modules = llama` framework imports. Use composite build until
+  this lands. Android and JVM are unaffected.
 - **Variants are publish-time gated.** A Maven artifact published with
   `kmp-ai.android=false` has no Android variant — Android consumers can't
-  resolve it. The default ("all targets on") works as long as the publishing
-  machine has the right toolchains; publish from a Mac with the Android SDK
-  and `llama.xcframework` to get a fully multi-target artifact.
-- **No prebuilt natives in the AAR.** Android consumers' first build runs
-  CMake on the bundled llama.cpp.
-- **iOS consumers must provide their own xcframework.** No automatic
-  resolution. This is the next thing on the list to fix.
+  resolve it. Maven Central releases come from GitHub Actions on `macos-latest`
+  with all targets enabled, so the published `0.2.x` artifacts always have
+  full coverage.
 - **JVM cancellation isn't mid-token.** Cancelling a `generate()` `Flow`
   on JVM lets the current token finish; the underlying `de.kherud:llama`
-  doesn't expose mid-token cancellation. Android and iOS implementations
-  honour cancellation between tokens.
+  doesn't expose mid-token cancellation. Android cancels between tokens.
 - **No KV-cache reuse across `ChatSession.send()` turns.** Each turn
   re-feeds the full prompt. Fine for short conversations, wasteful for
-  long ones.
+  long ones. On the roadmap.
 
-## Requirements
+## Requirements (consumer)
 
 - JDK 21 (auto-provisioned via Gradle toolchain)
-- For Android: Android SDK + NDK 27
-- For iOS: macOS + Xcode + `llama.xcframework`
-- To opt out of either target: `-Pkmp-ai.android=false` / `-Pkmp-ai.ios=false`
+- For Android consumer: nothing extra — AAR ships prebuilt `.so` files
+- For iOS consumer: composite build setup (see Status), `llama.xcframework`
+  on disk
 
 ## License
 

@@ -5,8 +5,11 @@ backed by [llama.cpp](https://github.com/ggml-org/llama.cpp).
 
 - Coroutine `Flow<Token>` streaming
 - Built-in HuggingFace / URL / local-file model resolution with SHA-256 verification
+- Resumable downloads — survives flaky networks / app restarts
 - Chat templates: ChatML, Llama 3, Gemma, Custom
-- Curated model catalogs (Qwen 2.5, Gemma 2/3)
+- KV-cache reuse across `ChatSession` turns — follow-ups only decode the new message
+- Constrained generation via GBNF grammars (`Grammar.choice`, `Grammar.json`, `Grammar.regex`, …)
+- Curated model catalogs (Qwen 2.5, Gemma 2/3, DeepSeek-R1-Distill)
 - KMP Compose Multiplatform sample app (Desktop + Android + iOS)
 - **Maven Central** distribution — Android AARs ship prebuilt `.so` files; consumers don't need NDK locally.
 
@@ -29,7 +32,7 @@ backed by [llama.cpp](https://github.com/ggml-org/llama.cpp).
 | --------------- | ---------------------------------------------------------------------------------------- |
 | **JVM (Desktop)**   | ✅ Stable. `de.kherud:llama` ships natives for Mac/Linux/Win.                          |
 | **Android**         | ✅ Stable. Maven Central AAR includes prebuilt `libllama.so`/`libggml*.so`/`libkmpai_llama.so` for `arm64-v8a` + `x86_64`. Consumers don't need NDK. |
-| **iOS**             | ⚠️ Engine pending rewrite for Kotlin 2.2.x cinterop bindings. The Maven Central iOS klib compiles but `LlmEnvironment.default().load(...)` throws at runtime. **For iOS today: use composite build** (`includeBuild("../kmp-ai")`), which still works against the older bindings. |
+| **iOS**             | ✅ Stable since v0.3.0. Engine + repository are live; SPM distribution ships `KmpAI.xcframework` + `llama.xcframework` for Swift consumers. Background-download resume via `cancelByProducingResumeData` since v0.4.0. |
 
 ## Installation
 
@@ -134,8 +137,8 @@ val llmModule = module {
 ```
 
 Done. `commonMain` calls `get<LlmEnvironment>().load(Qwen.Qwen2_5_0_5B_Q4)` and
-gets a real engine on JVM and Android, no per-platform DI bindings, no `Context`
-plumbing. (iOS via composite build until the engine rewrite ships.)
+gets a real engine on JVM, Android, and iOS — no per-platform DI bindings, no
+`Context` plumbing.
 
 ## Quick start
 
@@ -231,6 +234,7 @@ interface LlmEngine : AutoCloseable {
     fun generate(prompt: String, params: SamplingParams): Flow<Token>
     suspend fun complete(prompt: String, params: SamplingParams): String
     fun tokenize(text: String): IntArray
+    fun countTokens(text: String): Int           // cheap path; default delegates to tokenize().size
     fun embed(text: String): FloatArray
 }
 ```
@@ -252,8 +256,8 @@ ModelSource.LocalFile("/abs/path/to/model.gguf")
 `ModelRepository` resolves a `ModelSource` to a local file, downloading and caching
 as needed. Two implementations:
 
-- `DefaultModelRepository(File)` — JVM and Android (uses `HttpURLConnection`)
-- `IosModelRepository(NSURL)` — iOS (currently a stub; see Status)
+- `DefaultModelRepository(File)` — JVM and Android (uses `HttpURLConnection`, supports `Range:` resume)
+- `IosModelRepository(NSURL)` — iOS (uses `NSURLSession`, supports `cancelByProducingResumeData`)
 
 Both expose:
 
@@ -261,8 +265,15 @@ Both expose:
 fun resolve(source: ModelSource): Flow<DownloadProgress>
 suspend fun path(source: ModelSource): String
 suspend fun remove(source: ModelSource)
+suspend fun pathIfCached(source: ModelSource): String?     // since 0.3.2
+suspend fun isCached(source: ModelSource): Boolean         // since 0.3.2
 suspend fun list(): List<CachedModel>
 ```
+
+`isCached` / `pathIfCached` check the on-disk path that `resolve` would
+write to — use these instead of `list().any { it.id == source.id }`, which
+won't match because `CachedModel.id` is derived from the on-disk layout
+and not guaranteed to equal `ModelSource.id`.
 
 `DownloadProgress` is a sealed type — `Running(bytes, total)`, `Done(path)`, `Failed(error)`.
 
@@ -288,11 +299,55 @@ val chat = ChatSession(engine, ChatTemplate.ChatML, systemPrompt = "...")
 chat.send("hello").collect { print(it.text) }
 chat.send("and now in french").collect { print(it.text) }
 chat.history    // List<ChatMessage>
-chat.reset()    // clear, keep system prompt
+chat.reset()    // clear, keep system prompt; also drops the engine's KV cache
 ```
+
+Follow-up turns reuse the engine's KV cache: `ChatSession` finds the longest
+common prefix between the new prompt and what's already decoded, then only
+decodes the diff. On a 4 k-context chat this typically cuts turn-2 latency
+from "full prompt" down to "just the new user message". Works on Android &
+iOS natively; on JVM via `de.kherud:llama`'s `setCachePrompt(true)`.
 
 Built-in templates: `ChatML` (Qwen, many open models), `Llama3`, `Gemma`. For
 anything else, use `ChatTemplate.Custom(formatter, stops)`.
+
+### Constrained generation (`Grammar`)
+
+Force the model to emit text that matches a [GBNF grammar][gbnf]. Useful for
+agentic tool calls, structured output, multiple-choice routing.
+
+```kotlin
+// Most-specific wins: per-call > ChatSession.defaults > LlmEnvironment.defaultSampling
+val env = LlmEnvironment.default()
+val chat = env.chat(Qwen.Qwen2_5_0_5B_Q4, template = Qwen.template)
+
+// Bounded multiple choice:
+chat.choose("Is Kotlin Multiplatform mobile-first?", "yes", "no")
+// → "yes"
+
+// Free JSON:
+chat.askJson("Give me a person record with name and age.")
+// → {"name":"Ada","age":36}
+
+// Grammar attached to per-call SamplingParams:
+val schema = Grammar.jsonObject("city", "country")
+chat.send("Where was Ada Lovelace born?", SamplingParams(grammar = schema))
+    .collect { print(it.text) }
+// → {"city":"London","country":"United Kingdom"}
+
+// Hand-written GBNF for full control:
+val years = Grammar.raw("""
+    root ::= year (", " year)*
+    year ::= [0-9] [0-9] [0-9] [0-9]
+""")
+```
+
+Grammar layering ([demo](#layered-defaults)): set `defaultSampling` on the
+environment if every call should produce JSON, then pass per-call grammars
+to override on specific endpoints. The most-specific grammar always wins;
+unset levels fall through.
+
+[gbnf]: https://github.com/ggml-org/llama.cpp/blob/master/grammars/README.md
 
 ### `EngineConfig` and `SamplingParams` presets
 
@@ -325,12 +380,14 @@ guarantee). JVM is no-op.
 
 ### Catalogs
 
-`:llm-catalog-qwen` and `:llm-catalog-gemma` are tiny modules holding curated
-`ModelSource` constants and matched `ChatTemplate`s:
+`:llm-catalog-qwen`, `:llm-catalog-gemma`, and `:llm-catalog-deepseek` are
+tiny modules holding curated `ModelSource` constants and matched
+`ChatTemplate`s:
 
 ```kotlin
 import io.github.fadizg.kmpai.catalog.Qwen
 import io.github.fadizg.kmpai.catalog.Gemma
+import io.github.fadizg.kmpai.catalog.DeepSeek
 
 Qwen.Qwen2_5_0_5B_Q4   // ~350 MB, smallest practical Qwen
 Qwen.Qwen2_5_1_5B_Q4   // ~1.0 GB
@@ -342,7 +399,36 @@ Qwen.template          // ChatTemplate.ChatML
 Gemma.Gemma2_2B_Q4     // ~1.6 GB
 Gemma.Gemma3_1B_Q4     // ~750 MB
 Gemma.template         // ChatTemplate.Gemma
+
+DeepSeek.R1_Distill_Qwen_1_5B_Q4    // ~1.0 GB, reasoning model — emits <think>…</think> blocks
+DeepSeek.R1_Distill_Qwen_7B_Q4      // ~4.7 GB
+DeepSeek.R1_Distill_Llama_8B_Q4     // ~4.9 GB
+DeepSeek.template                    // ChatTemplate.ChatML
 ```
+
+### Layered defaults
+
+Set a baseline `SamplingParams` (most usefully a `Grammar`) once on the
+environment; every chat session inherits it; per-call params still win:
+
+```kotlin
+val env = LlmEnvironment.default()
+    .withDefaults(SamplingParams(grammar = Grammar.json()))   // global default
+val chat = env.chat(Qwen.Qwen2_5_0_5B_Q4, template = Qwen.template)
+
+chat.send("Tell me about Ada Lovelace")   // emits valid JSON (env default)
+chat.send(
+    "Yes or no — was she a programmer?",
+    SamplingParams(grammar = Grammar.choice("yes", "no")),  // per-call override
+)
+```
+
+### Resumable downloads
+
+Multi-GB GGUF downloads survive transient failures. JVM/Android send
+`Range: bytes=N-` when a `.part` file exists; iOS uses NSURLSession
+`cancelByProducingResumeData` and replays the resumeData blob on the next
+attempt. SHA-256 verification still spans the full file.
 
 ## Sample apps
 
@@ -481,13 +567,13 @@ Sonatype. No PAT or credentials needed by the consumer.
 implementation("io.github.fadizg.kmpai:llm:0.2.8")
 ```
 
-iOS klib ships in the published artifact but currently throws at runtime
-(see Status). Use composite build for iOS today.
+iOS consumers can either pull the Maven Central klib (Kotlin/KMP project) or
+the Swift Package (Swift-only project) — see [Swift Package Manager](#swift-package-manager-ios-no-gradle).
 
 ### 2. Composite build (no publish needed)
 
-Best for actively developing kmp-ai alongside a consumer project, or for
-iOS until the engine rewrite ships. In the consumer's `settings.gradle.kts`:
+Best for actively developing kmp-ai alongside a consumer project. In the
+consumer's `settings.gradle.kts`:
 
 ```kotlin
 includeBuild("../kmp-ai")
@@ -543,9 +629,10 @@ kmp-ai/
 │   ├── src/jvmAndAndroidMain/    DefaultModelRepository (HttpURLConnection)
 │   ├── src/jvmMain/              LlamaCppEngine (de.kherud:llama)
 │   ├── src/androidMain/          AndroidLlamaCppEngine + JNI bridge + cpp/
-│   └── src/iosMain/              IosLlamaCppEngine (stub) + cinterop bindings
+│   └── src/iosMain/              IosLlamaCppEngine + cinterop bindings + IosModelRepository
 ├── llm-catalog-qwen/             curated Qwen ModelSource constants
 ├── llm-catalog-gemma/            curated Gemma ModelSource constants
+├── llm-catalog-deepseek/         curated DeepSeek-R1-Distill ModelSource constants
 ├── samples/
 │   ├── jvm/                      headless CLI
 │   └── app/                      Compose MP chat UI (Desktop + Android + iOS)
@@ -559,29 +646,28 @@ kmp-ai/
 
 ## Caveats
 
-- **iOS engine is stubbed.** The Maven Central iOS klib compiles and the API
-  surface matches JVM/Android, but the actual engine throws at runtime. The
-  cinterop bindings need a rewrite to match Kotlin 2.2.x's Objective-C-mode
-  output for `modules = llama` framework imports. Use composite build until
-  this lands. Android and JVM are unaffected.
 - **Variants are publish-time gated.** A Maven artifact published with
   `kmp-ai.android=false` has no Android variant — Android consumers can't
   resolve it. Maven Central releases come from GitHub Actions on `macos-latest`
-  with all targets enabled, so the published `0.2.x` artifacts always have
+  with all targets enabled, so the published `0.x` artifacts always have
   full coverage.
 - **JVM cancellation isn't mid-token.** Cancelling a `generate()` `Flow`
   on JVM lets the current token finish; the underlying `de.kherud:llama`
-  doesn't expose mid-token cancellation. Android cancels between tokens.
-- **No KV-cache reuse across `ChatSession.send()` turns.** Each turn
-  re-feeds the full prompt. Fine for short conversations, wasteful for
-  long ones. On the roadmap.
+  doesn't expose mid-token cancellation. Android and iOS cancel between tokens.
+- **Grammar truncation.** A grammar enforced via `SamplingParams.grammar`
+  is checked at every step; if `maxTokens` runs out before the grammar
+  reaches an accepting state, output is truncated. Size `maxTokens`
+  generously when emitting structured output.
+- **KV-cache reuse falls back to a full re-decode** when the system prompt
+  changes mid-session, the prefix divergence is far enough back that
+  reuse isn't worthwhile, or `ChatSession.reset()` is called.
 
 ## Requirements (consumer)
 
 - JDK 21 (auto-provisioned via Gradle toolchain)
 - For Android consumer: nothing extra — AAR ships prebuilt `.so` files
-- For iOS consumer: composite build setup (see Status), `llama.xcframework`
-  on disk
+- For iOS consumer (Kotlin/KMP): nothing extra beyond Maven Central
+- For iOS consumer (Swift-only): SPM auto-fetches the binary xcframeworks
 
 ## License
 

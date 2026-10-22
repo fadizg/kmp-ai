@@ -19,6 +19,8 @@ import io.github.fadizg.kmpai.llm.llamacpp.llama_model_free
 import io.github.fadizg.kmpai.llm.llamacpp.llama_model_get_vocab
 import io.github.fadizg.kmpai.llm.llamacpp.llama_model_load_from_file
 import io.github.fadizg.kmpai.llm.llamacpp.llama_model_n_embd
+import io.github.fadizg.kmpai.llm.llamacpp.llama_n_batch
+import io.github.fadizg.kmpai.llm.llamacpp.llama_n_ctx
 import io.github.fadizg.kmpai.llm.llamacpp.llama_sampler
 import io.github.fadizg.kmpai.llm.llamacpp.llama_sampler_chain_add
 import io.github.fadizg.kmpai.llm.llamacpp.llama_sampler_chain_default_params
@@ -42,6 +44,7 @@ import kotlinx.cinterop.alloc
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.get
 import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.plus
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.readValue
 import kotlinx.cinterop.reinterpret
@@ -111,6 +114,14 @@ internal class IosLlamaCppEngine private constructor(
             val nNeg = llama_tokenize(vocab, text, byteLen, null, 0, true, true)
             val n = if (nNeg < 0) -nNeg else nNeg
             if (n == 0) return@memScoped FloatArray(0)
+            // Pooled embeddings need the whole text in one batch, so this one
+            // cannot be chunked the way the prefill is — refuse oversized input
+            // instead of letting llama.cpp's batch-size assert abort the process.
+            val nBatch = llama_n_batch(ctx).toInt()
+            if (n > nBatch) {
+                throw GenerationException("text too long to embed: $n tokens > batch size $nBatch")
+            }
+
             val tokens = allocArray<IntVar>(n)
             llama_tokenize(vocab, text, byteLen, tokens, n, true, true)
 
@@ -170,6 +181,17 @@ internal class IosLlamaCppEngine private constructor(
             val promptTokens = tokenize(prompt, addSpecial = true)
             if (promptTokens.isEmpty()) throw GenerationException("tokenization produced no tokens")
 
+            // The prompt has to fit the context with room left to generate into.
+            // Past that, llama_decode would fail mid-prefill and leave a
+            // half-built KV cache, so refuse up front with an actionable message.
+            val nCtx = llama_n_ctx(ctx).toInt()
+            if (promptTokens.size + params.maxTokens > nCtx) {
+                throw GenerationException(
+                    "prompt does not fit the context: ${promptTokens.size} prompt tokens + " +
+                        "${params.maxTokens} requested tokens > context size $nCtx",
+                )
+            }
+
             // Compute KV-cache prefix reuse.
             var reuseN = commonPrefixLen(cachedTokens, promptTokens)
             if (reuseN == promptTokens.size) reuseN = promptTokens.size - 1
@@ -193,8 +215,23 @@ internal class IosLlamaCppEngine private constructor(
                 for (i in 0 until prefillCount) {
                     prefillBuf[i] = promptTokens[reuseN + i]
                 }
-                val promptBatch = llama_batch_get_one(prefillBuf, prefillCount)
-                if (llama_decode(ctx, promptBatch) != 0) {
+                // llama.cpp asserts (and so aborts the whole process) when a
+                // single batch carries more than n_batch tokens, so the prefill
+                // goes in n_batch-sized chunks rather than as one batch the size
+                // of the prompt.
+                val nBatch = llama_n_batch(ctx).toInt()
+                var prefillOk = true
+                var offset = 0
+                while (offset < prefillCount) {
+                    val chunk = minOf(nBatch, prefillCount - offset)
+                    val promptBatch = llama_batch_get_one(checkNotNull(prefillBuf + offset), chunk)
+                    if (llama_decode(ctx, promptBatch) != 0) {
+                        prefillOk = false
+                        break
+                    }
+                    offset += chunk
+                }
+                if (!prefillOk) {
                     llama_memory_clear(llama_get_memory(ctx), true)
                     cachedTokens = IntArray(0)
                     throw GenerationException("llama_decode failed for prompt")

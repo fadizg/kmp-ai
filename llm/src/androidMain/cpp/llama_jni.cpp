@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <android/log.h>
+#include <algorithm>
 #include <atomic>
 #include <cstring>
 #include <memory>
@@ -223,6 +224,21 @@ Java_io_github_fadizg_kmpai_llm_LlamaNative_nativeGenerate(
         return;
     }
 
+    // The prompt has to fit the context with room left to generate into. Past
+    // that, llama_decode would fail mid-prefill and leave a half-built KV cache,
+    // so refuse up front with a message the caller can act on. Ask the context
+    // for its size rather than trusting the value we passed in — llama.cpp
+    // clamps it to what the model was trained for.
+    const int n_ctx = (int) llama_n_ctx(handle->ctx);
+    if ((int) tokens.size() + maxTokens > n_ctx) {
+        throw_runtime(
+            env,
+            "prompt does not fit the context: " + std::to_string(tokens.size()) +
+                " prompt tokens + " + std::to_string(maxTokens) +
+                " requested tokens > context size " + std::to_string(n_ctx));
+        return;
+    }
+
     // Decide where in the prompt to start decoding. With reuse, we keep the
     // KV state for the longest common prefix between the cached tokens and
     // the new prompt, then only decode the diff suffix. Without reuse, we
@@ -245,9 +261,21 @@ Java_io_github_fadizg_kmpai_llm_LlamaNative_nativeGenerate(
             /* seq_id */ 0, /* p0 */ (llama_pos) reuse_n, /* p1 */ -1);
     }
 
-    int prefill_count = (int) (tokens.size() - reuse_n);
-    llama_batch batch = llama_batch_get_one(tokens.data() + reuse_n, prefill_count);
-    if (llama_decode(handle->ctx, batch) != 0) {
+    // llama.cpp asserts (and so aborts the whole process) when a single batch
+    // carries more than n_batch tokens, so the prefill goes in n_batch-sized
+    // chunks rather than as one batch the size of the prompt.
+    const int n_batch = (int) llama_n_batch(handle->ctx);
+    const int prefill_count = (int) (tokens.size() - reuse_n);
+    bool prefill_ok = true;
+    for (int offset = 0; offset < prefill_count; offset += n_batch) {
+        const int chunk = std::min(n_batch, prefill_count - offset);
+        llama_batch batch = llama_batch_get_one(tokens.data() + reuse_n + offset, chunk);
+        if (llama_decode(handle->ctx, batch) != 0) {
+            prefill_ok = false;
+            break;
+        }
+    }
+    if (!prefill_ok) {
         // KV state is now in an undefined position — drop it so the next call rebuilds.
         llama_memory_clear(llama_get_memory(handle->ctx), true);
         handle->cached_tokens.clear();
@@ -333,6 +361,18 @@ Java_io_github_fadizg_kmpai_llm_LlamaNative_nativeEmbed(
 
     auto tokens = tokenize_string(handle->model, text, true);
     if (tokens.empty()) return env->NewFloatArray(0);
+
+    // Pooled embeddings need the whole text in one batch, so this one cannot be
+    // chunked the way the prefill is — refuse oversized input instead of
+    // letting llama.cpp's batch-size assert abort the process.
+    const int n_batch_embd = (int) llama_n_batch(handle->ctx);
+    if ((int) tokens.size() > n_batch_embd) {
+        throw_runtime(
+            env,
+            "text too long to embed: " + std::to_string(tokens.size()) +
+                " tokens > batch size " + std::to_string(n_batch_embd));
+        return nullptr;
+    }
 
     // embed() invalidates the KV cache; drop our prefix tracking.
     llama_memory_clear(llama_get_memory(handle->ctx), true);
